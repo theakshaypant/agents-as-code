@@ -13,6 +13,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	agentv1alpha1 "github.com/theakshaypant/yeet/pkg/apis/agent/v1alpha1"
+	"github.com/theakshaypant/yeet/pkg/matcher"
 	"github.com/theakshaypant/yeet/pkg/provider"
 )
 
@@ -103,7 +104,7 @@ func (a *Adapter) HandleEvent(ctx context.Context) http.HandlerFunc {
 					logger.Errorf("panic processing event: %v", r)
 				}
 			}()
-			processEvent(evt, repo, logger)
+			a.processEvent(ctx, evt, prov, repo, logger)
 		}()
 
 		writeResponse(w, http.StatusAccepted, "accepted")
@@ -188,7 +189,7 @@ func (a *Adapter) getRepoWebhookSecret(ctx context.Context, repo *agentv1alpha1.
 	return string(val), nil
 }
 
-func processEvent(evt *provider.Event, _ *agentv1alpha1.Repository, logger *zap.SugaredLogger) {
+func (a *Adapter) processEvent(ctx context.Context, evt *provider.Event, prov provider.Interface, repo *agentv1alpha1.Repository, logger *zap.SugaredLogger) {
 	logger = logger.With(
 		"trigger", evt.TriggerType,
 		"org", evt.Organization,
@@ -197,59 +198,61 @@ func processEvent(evt *provider.Event, _ *agentv1alpha1.Repository, logger *zap.
 		"sender", evt.Sender,
 	)
 
-	switch evt.TriggerType {
-	case provider.TriggerPush:
-		logger.Infow("received push event",
-			"branch", evt.BaseBranch,
-		)
+	logger.Infow("processing event")
+
+	if evt.TriggerType == provider.TriggerPush {
 		// TODO: check if branch matches repo.Spec.KnowledgeGraph.Branches
 		// TODO: run incremental knowledge graph update via graphify --update
 		// TODO: update Repository status with new commit SHA and graph counts
-
-	case provider.TriggerPullRequest:
-		logger.Infow("received pull request event",
-			"pr", evt.PullRequestNumber,
-			"title", evt.PullRequestTitle,
-			"base", evt.BaseBranch,
-			"head", evt.HeadBranch,
-		)
-		// TODO: match event to agent definitions in .tekton/agents/
-		// TODO: filter knowledge graph context for matched agents
-		// TODO: create AgentRun CR
-
-	case provider.TriggerPullRequestReview:
-		logger.Infow("received pull request review event",
-			"pr", evt.PullRequestNumber,
-			"base", evt.BaseBranch,
-			"head", evt.HeadBranch,
-		)
-		// TODO: extract review state (approved/changes_requested/commented)
-		// TODO: enable reviewer agent to hold conversations via review threads
-		// TODO: match to agent definitions with on.event=pull_request_review
-
-	case provider.TriggerIssueComment:
-		logger.Infow("received issue comment event",
-			"pr", evt.PullRequestNumber,
-		)
-		// TODO: parse comment body for agent commands (/triage, /implement, /review)
-		// TODO: match to agent definitions with on.event=issue_comment and on.match
-		// TODO: create AgentRun CR
-
-	case provider.TriggerIssueLabeled:
-		logger.Infow("received issue labeled event")
-		// TODO: extract label name from event
-		// TODO: match to agent definitions with on.event=issues, on.action=labeled
-
-	case provider.TriggerPRLabeled:
-		logger.Infow("received pull request labeled event",
-			"pr", evt.PullRequestNumber,
-		)
-		// TODO: extract label name from event
-		// TODO: match to agent definitions with on.event=pull_request, on.action=labeled
-
-	default:
-		logger.Infow("received unhandled event type")
 	}
+
+	if evt.TriggerType == provider.TriggerIssueComment {
+		allowed, err := prov.CheckPermission(ctx, evt)
+		if err != nil {
+			logger.Errorf("failed to check permission for %s: %v", evt.Sender, err)
+			return
+		}
+		if !allowed {
+			logger.Infow("sender does not have write permission, skipping", "sender", evt.Sender)
+			return
+		}
+	}
+
+	matches := a.matchAgents(ctx, evt, prov, logger)
+	if len(matches) == 0 {
+		logger.Infow("no agents matched event")
+		return
+	}
+
+	for _, m := range matches {
+		logger.Infow("agent matched",
+			"agent", m.Agent.Name,
+			"purpose", m.Agent.Spec.Purpose,
+			"trigger_event", m.Trigger.Event,
+		)
+		// TODO: create AgentRun CR for each matched agent
+	}
+}
+
+func (a *Adapter) matchAgents(ctx context.Context, evt *provider.Event, prov provider.Interface, logger *zap.SugaredLogger) []matcher.AgentMatch {
+	rawYAML, err := prov.GetAgentDir(ctx, evt, matcher.AgentDirPath())
+	if err != nil {
+		logger.Errorf("failed to fetch agent definitions: %v", err)
+		return nil
+	}
+	if rawYAML == "" {
+		logger.Debugf("no .tekton/agents/ directory found")
+		return nil
+	}
+
+	agents, err := matcher.ParseAgentDefinitions(rawYAML)
+	if err != nil {
+		logger.Errorf("failed to parse agent definitions: %v", err)
+		return nil
+	}
+
+	logger.Infow("discovered agent definitions", "count", len(agents))
+	return matcher.MatchAgentsToEvent(agents, evt, logger)
 }
 
 type response struct {
