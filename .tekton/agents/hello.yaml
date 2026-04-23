@@ -1,0 +1,14 @@
+apiVersion: agent.tekton.dev/v1alpha1
+kind: Agent
+metadata:
+  name: hello
+spec:
+  purpose: Comment "Hello, World!" on issues and pull requests.
+  triggers:
+    - event: issue_comment
+      match: "/hello"
+    - event: issues_labeled
+      match: hello
+  limits:
+    maxTokens: 1000
+    timeoutSeconds: 30
