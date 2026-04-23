@@ -31,18 +31,18 @@ type Event struct {
 	PullRequestNumber int
 	PullRequestTitle  string
 
+	CommentBody string
+
 	Sender string
 
 	Provider *ProviderInfo
 	Request  *Request
 
 	InstallationID int64
-	GHEURL         string
 }
 
 type ProviderInfo struct {
 	Token         string
-	URL           string
 	WebhookSecret string
 }
 

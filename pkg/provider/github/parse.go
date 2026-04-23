@@ -18,7 +18,6 @@ func (p *Provider) ParsePayload(_ context.Context, req *http.Request, payload st
 		Payload: []byte(payload),
 	}
 	evt.EventType = req.Header.Get("X-GitHub-Event")
-	evt.Provider.URL = req.Header.Get("X-GitHub-Enterprise-Host")
 
 	installationID, _ := extractInstallationID(payload)
 	evt.InstallationID = installationID
@@ -56,7 +55,7 @@ func parsePushEvent(evt *provider.Event, e *gh.PushEvent) *provider.Event {
 	evt.Sender = e.GetSender().GetLogin()
 	evt.BaseBranch = stripRefsPrefix(e.GetRef())
 	evt.HeadBranch = evt.BaseBranch
-	evt.GHEURL = evt.Provider.URL
+
 	return evt
 }
 
@@ -75,7 +74,7 @@ func parsePullRequestEvent(evt *provider.Event, e *gh.PullRequestEvent) *provide
 	evt.Sender = e.GetPullRequest().GetUser().GetLogin()
 	evt.PullRequestNumber = e.GetPullRequest().GetNumber()
 	evt.PullRequestTitle = e.GetPullRequest().GetTitle()
-	evt.GHEURL = evt.Provider.URL
+
 	return evt
 }
 
@@ -91,7 +90,7 @@ func parsePullRequestReviewEvent(evt *provider.Event, e *gh.PullRequestReviewEve
 	evt.Sender = e.GetSender().GetLogin()
 	evt.PullRequestNumber = e.GetPullRequest().GetNumber()
 	evt.PullRequestTitle = e.GetPullRequest().GetTitle()
-	evt.GHEURL = evt.Provider.URL
+
 	// TODO: extract review body, state (approved/changes_requested/commented)
 	return evt
 }
@@ -105,8 +104,8 @@ func parseIssueCommentEvent(evt *provider.Event, e *gh.IssueCommentEvent) *provi
 	if e.GetIssue().IsPullRequest() {
 		evt.PullRequestNumber = e.GetIssue().GetNumber()
 	}
-	evt.GHEURL = evt.Provider.URL
-	// TODO: extract comment body for agent command matching (/triage, /implement, etc.)
+	evt.CommentBody = e.GetComment().GetBody()
+
 	// TODO: if PR comment, fetch full PR details to populate SHA, branches
 	return evt
 }
@@ -117,7 +116,7 @@ func parseIssuesEvent(evt *provider.Event, e *gh.IssuesEvent) *provider.Event {
 	evt.Repository = e.GetRepo().GetName()
 	evt.URL = e.GetRepo().GetHTMLURL()
 	evt.Sender = e.GetSender().GetLogin()
-	evt.GHEURL = evt.Provider.URL
+
 	// TODO: extract label name for agent matching (on.event=issues, on.action=labeled, match=<label>)
 	return evt
 }

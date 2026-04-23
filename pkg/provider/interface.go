@@ -14,4 +14,6 @@ type Interface interface {
 	SetClient(ctx context.Context, event *Event, token, webhookSecret string) error
 	CreateComment(ctx context.Context, event *Event, body string) error
 	GetFiles(ctx context.Context, event *Event) ([]string, error)
+	GetAgentDir(ctx context.Context, event *Event, path string) (string, error)
+	CheckPermission(ctx context.Context, event *Event) (bool, error)
 }
