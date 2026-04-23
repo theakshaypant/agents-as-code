@@ -30,7 +30,7 @@ type AgentSpec struct {
 	// On defines which git events trigger this agent.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinItems=1
-	On []AgentTrigger `json:"on"`
+	On []AgentTrigger `json:"triggers"`
 
 	// Limits constrains agent execution.
 	// +kubebuilder:validation:Required
