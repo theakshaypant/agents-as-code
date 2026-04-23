@@ -32,6 +32,7 @@ type Event struct {
 	PullRequestTitle  string
 
 	CommentBody string
+	Label       string
 
 	Sender string
 

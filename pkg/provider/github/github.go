@@ -68,7 +68,7 @@ func (p *Provider) GetAgentDir(ctx context.Context, evt *provider.Event, path st
 	// so only merged agent definitions run.
 	revision := evt.DefaultBranch
 
-	rootTree, _, err := p.client.Git.GetTree(ctx, evt.Organization, evt.Repository, revision, false)
+	rootTree, _, err := p.client.Git.GetTree(ctx, evt.Organization, evt.Repository, revision, true)
 	if err != nil {
 		return "", fmt.Errorf("fetching root tree: %w", err)
 	}

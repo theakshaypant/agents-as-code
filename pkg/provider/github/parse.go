@@ -63,6 +63,7 @@ func parsePullRequestEvent(evt *provider.Event, e *gh.PullRequestEvent) *provide
 	evt.TriggerType = provider.TriggerPullRequest
 	if e.GetAction() == "labeled" {
 		evt.TriggerType = provider.TriggerPRLabeled
+		evt.Label = e.GetLabel().GetName()
 	}
 	evt.Organization = e.GetRepo().GetOwner().GetLogin()
 	evt.Repository = e.GetRepo().GetName()
@@ -100,6 +101,7 @@ func parseIssueCommentEvent(evt *provider.Event, e *gh.IssueCommentEvent) *provi
 	evt.Organization = e.GetRepo().GetOwner().GetLogin()
 	evt.Repository = e.GetRepo().GetName()
 	evt.URL = e.GetRepo().GetHTMLURL()
+	evt.DefaultBranch = e.GetRepo().GetDefaultBranch()
 	evt.Sender = e.GetSender().GetLogin()
 	if e.GetIssue().IsPullRequest() {
 		evt.PullRequestNumber = e.GetIssue().GetNumber()
@@ -115,9 +117,10 @@ func parseIssuesEvent(evt *provider.Event, e *gh.IssuesEvent) *provider.Event {
 	evt.Organization = e.GetRepo().GetOwner().GetLogin()
 	evt.Repository = e.GetRepo().GetName()
 	evt.URL = e.GetRepo().GetHTMLURL()
+	evt.DefaultBranch = e.GetRepo().GetDefaultBranch()
 	evt.Sender = e.GetSender().GetLogin()
+	evt.Label = e.GetLabel().GetName()
 
-	// TODO: extract label name for agent matching (on.event=issues, on.action=labeled, match=<label>)
 	return evt
 }
 
