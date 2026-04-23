@@ -30,7 +30,7 @@ func MatchAgentsToEvent(agents []agentv1alpha1.Agent, evt *provider.Event, logge
 				continue
 			}
 
-			if !matchComment(trigger, evt) {
+			if !matchFilter(trigger, evt) {
 				continue
 			}
 
@@ -68,11 +68,18 @@ func matchBranches(trigger *agentv1alpha1.AgentTrigger, evt *provider.Event) boo
 	return false
 }
 
-func matchComment(trigger *agentv1alpha1.AgentTrigger, evt *provider.Event) bool {
+func matchFilter(trigger *agentv1alpha1.AgentTrigger, evt *provider.Event) bool {
 	if trigger.Match == "" {
 		return true
 	}
-	return strings.Contains(evt.CommentBody, trigger.Match)
+	switch evt.TriggerType {
+	case provider.TriggerIssueComment:
+		return strings.Contains(evt.CommentBody, trigger.Match)
+	case provider.TriggerIssueLabeled, provider.TriggerPRLabeled:
+		return evt.Label == trigger.Match
+	default:
+		return false
+	}
 }
 
 func branchMatch(pattern, branch string) bool {
