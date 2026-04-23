@@ -37,6 +37,30 @@ type RepositorySpec struct {
 	// KnowledgeGraph configures the repository's knowledge graph.
 	// +optional
 	KnowledgeGraph *KnowledgeGraphSpec `json:"knowledge_graph,omitempty"`
+
+	// Settings contains optional configuration for the repository.
+	// +optional
+	Settings *Settings `json:"settings,omitempty"`
+}
+
+type Settings struct {
+	// AI configures the LLM provider used by agents for this repository.
+	// +optional
+	AI *AIConfig `json:"ai,omitempty"`
+}
+
+type AIConfig struct {
+	// Enabled controls whether AI agents can run against this repository.
+	// +kubebuilder:validation:Required
+	Enabled bool `json:"enabled"`
+
+	// Provider is the LLM provider name (e.g. openai, anthropic).
+	// +kubebuilder:validation:Required
+	Provider string `json:"provider"`
+
+	// SecretRef references the Kubernetes Secret containing the LLM API key.
+	// +kubebuilder:validation:Required
+	SecretRef Secret `json:"secret_ref"`
 }
 
 type GitProvider struct {
