@@ -1,0 +1,21 @@
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: yeet-webhook
+  namespace: yeet-system
+  labels:
+    yeet/route: webhook
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: "webhook.%DOMAIN_NAME%"
+    http:
+      paths:
+      - backend:
+          service:
+            name: yeet-webhook
+            port:
+              number: 8080
+        path: /
+        pathType: Prefix
