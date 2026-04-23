@@ -43,6 +43,13 @@ type GitProvider struct {
 	// Secret references the Kubernetes Secret containing the Git provider token.
 	// +kubebuilder:validation:Required
 	Secret Secret `json:"secret"`
+
+	// WebhookSecret references the Kubernetes Secret containing the webhook
+	// shared secret for payload validation. Used for webhook/PAT auth.
+	// For GitHub App auth, the webhook secret comes from the global
+	// controller secret instead.
+	// +optional
+	WebhookSecret *Secret `json:"webhook_secret,omitempty"`
 }
 
 type Secret struct {
