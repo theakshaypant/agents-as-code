@@ -79,14 +79,21 @@ func (a *Adapter) HandleEvent(ctx context.Context) http.HandlerFunc {
 			return
 		}
 
-		secret, err := a.getWebhookSecret(ctx, evt, repo)
+		token, err := a.getProviderToken(ctx, repo)
+		if err != nil {
+			logger.Errorf("failed to get provider token: %v", err)
+			writeResponse(w, http.StatusInternalServerError, "credential error")
+			return
+		}
+
+		webhookSecret, err := a.getWebhookSecret(ctx, evt, repo)
 		if err != nil {
 			logger.Errorf("failed to get webhook secret: %v", err)
 			writeResponse(w, http.StatusInternalServerError, "credential error")
 			return
 		}
 
-		if err := prov.SetClient(ctx, evt, "", secret); err != nil {
+		if err := prov.SetClient(ctx, evt, token, webhookSecret); err != nil {
 			logger.Errorf("failed to set up provider client: %v", err)
 			writeResponse(w, http.StatusInternalServerError, "client setup error")
 			return
@@ -140,6 +147,30 @@ func (a *Adapter) matchRepository(ctx context.Context, eventURL string) (*agentv
 		}
 	}
 	return nil, nil
+}
+
+func (a *Adapter) getProviderToken(ctx context.Context, repo *agentv1alpha1.Repository) (string, error) {
+	if repo.Spec.GitProvider == nil {
+		return "", fmt.Errorf("no git_provider configured on Repository %s/%s", repo.Namespace, repo.Name)
+	}
+	ref := repo.Spec.GitProvider.Secret
+	key := client.ObjectKey{
+		Namespace: repo.Namespace,
+		Name:      ref.Name,
+	}
+	var secret corev1.Secret
+	if err := a.client.Get(ctx, key, &secret); err != nil {
+		return "", fmt.Errorf("fetching secret %s/%s: %w", key.Namespace, key.Name, err)
+	}
+	secretKey := ref.Key
+	if secretKey == "" {
+		secretKey = "token"
+	}
+	val, ok := secret.Data[secretKey]
+	if !ok {
+		return "", fmt.Errorf("key %q not found in secret %s/%s", secretKey, key.Namespace, key.Name)
+	}
+	return string(val), nil
 }
 
 func (a *Adapter) getWebhookSecret(ctx context.Context, evt *provider.Event, repo *agentv1alpha1.Repository) (string, error) {
