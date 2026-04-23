@@ -1,0 +1,9 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: yeet-system
+  labels:
+    app.kubernetes.io/version: "devel"
+    app.kubernetes.io/instance: default
+    app.kubernetes.io/part-of: yeet
