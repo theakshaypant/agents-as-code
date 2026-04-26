@@ -1,0 +1,10 @@
+.env
+bin/
+dist/
+tmp/
+
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
