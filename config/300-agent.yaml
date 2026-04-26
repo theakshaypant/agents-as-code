@@ -25,8 +25,10 @@ spec:
       schema:
         openAPIV3Schema:
           description: |-
-            Repository is the representation of a Git repository and its associated
-            knowledge graph configuration.
+            Agent is a user-defined agent template describing what the agent does,
+            which git events trigger it, and which LLM provider to use.
+            Agent definitions live in .tekton/agents/ in the repository and are
+            discovered by the controller on each git event.
           properties:
             apiVersion:
               description: |-
@@ -47,205 +49,82 @@ spec:
               type: object
             spec:
               properties:
-                git_provider:
-                  description: GitProvider contains authentication configuration for the Git provider.
+                context:
+                  description: |-
+                    for optional overrides of the purpose-inferred KG filtering strategy.
+                    When present, its fields take precedence over the profile inferred
+                    from Purpose. Partial overrides work (e.g. specifying only Depth
+                    keeps the inferred strategy but increases traversal depth).
                   properties:
-                    secret:
-                      description: Secret references the Kubernetes Secret containing the Git provider token.
-                      properties:
-                        key:
-                          description: Key within the Secret.
-                          type: string
-                        name:
-                          description: Name of the Kubernetes Secret.
-                          type: string
-                      required:
-                        - name
-                      type: object
-                    webhook_secret:
-                      description: |-
-                        WebhookSecret references the Kubernetes Secret containing the webhook
-                        shared secret for payload validation. Used for webhook/PAT auth.
-                        For GitHub App auth, the webhook secret comes from the global
-                        controller secret instead.
-                      properties:
-                        key:
-                          description: Key within the Secret.
-                          type: string
-                        name:
-                          description: Name of the Kubernetes Secret.
-                          type: string
-                      required:
-                        - name
-                      type: object
-                  required:
-                    - secret
-                  type: object
-                knowledge_graph:
-                  description: KnowledgeGraph configures the repository's knowledge graph.
-                  properties:
-                    branches:
-                      description: Branches defines per-branch KG configuration. Each branch gets its own PV.
+                    depth:
+                      description: Depth overrides the max hops from seed nodes.
+                      type: integer
+                    edgeFilter:
+                      description: EdgeFilter limits which relationships to traverse.
                       items:
-                        properties:
-                          name:
-                            description: Name of the branch. Supports glob patterns (e.g. "release-*").
-                            minLength: 1
-                            type: string
-                          scope:
-                            description: Scope limits which paths are included in the knowledge graph.
-                            properties:
-                              ignore:
-                                description: Ignore excludes files matching these patterns, on top of graphify defaults.
-                                items:
-                                  type: string
-                                type: array
-                              paths:
-                                description: Paths limits the graph to these directories.
-                                items:
-                                  type: string
-                                type: array
-                            type: object
-                          storage:
-                            anyOf:
-                              - type: integer
-                              - type: string
-                            description: Storage is the size of the PV for this branch's knowledge graph.
-                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                            x-kubernetes-int-or-string: true
-                        required:
-                          - name
-                        type: object
+                        type: string
                       type: array
-                    enabled:
-                      description: Enabled controls whether the knowledge graph is maintained for this repository.
-                      type: boolean
-                    storageClassName:
-                      description: StorageClassName is the StorageClass used for provisioning KG PersistentVolumes.
+                    nodeFilter:
+                      description: NodeFilter limits which node kinds to include.
+                      items:
+                        type: string
+                      type: array
+                    strategy:
+                      description: Strategy overrides the inferred traversal strategy (bfs, dfs, community, impact).
                       type: string
+                    tokenBudget:
+                      description: TokenBudget caps the context size.
+                      type: integer
+                  type: object
+                limits:
+                  description: Limits constrains agent execution.
+                  properties:
+                    maxTokens:
+                      description: MaxTokens is the maximum tokens per AgentRun.
+                      minimum: 1
+                      type: integer
+                    timeoutSeconds:
+                      description: TimeoutSeconds is the maximum execution time.
+                      minimum: 1
+                      type: integer
                   required:
-                    - enabled
+                    - maxTokens
+                    - timeoutSeconds
                   type: object
-                settings:
-                  description: Settings contains optional configuration for the repository.
-                  properties:
-                    ai:
-                      description: AI configures the LLM provider used by agents for this repository.
-                      properties:
-                        enabled:
-                          description: Enabled controls whether AI agents can run against this repository.
-                          type: boolean
-                        provider:
-                          description: Provider is the LLM provider name (e.g. openai, anthropic).
-                          type: string
-                        secret_ref:
-                          description: SecretRef references the Kubernetes Secret containing the LLM API key.
-                          properties:
-                            key:
-                              description: Key within the Secret.
-                              type: string
-                            name:
-                              description: Name of the Kubernetes Secret.
-                              type: string
-                          required:
-                            - name
-                          type: object
-                      required:
-                        - enabled
-                        - provider
-                        - secret_ref
-                      type: object
-                  type: object
-                url:
-                  description: URL of the Git repository.
-                  pattern: ^https?://
+                purpose:
+                  description: |-
+                    Purpose is natural language describing what the agent does.
+                    Drives automatic KG filtering strategy selection.
                   type: string
+                triggers:
+                  description: On defines which git events trigger this agent.
+                  items:
+                    properties:
+                      branches:
+                        description: Branches filters by target branch. Supports glob patterns (e.g. "release-*").
+                        items:
+                          type: string
+                        type: array
+                      event:
+                        description: |-
+                          Event is the git event type that triggers this agent.
+                          Supported: push, pull_request, pull_request_review, issue_comment,
+                          issues_labeled, pull_request_labeled.
+                        type: string
+                      match:
+                        description: |-
+                          Match triggers only when the comment body contains this string.
+                          Only applicable to issue_comment events.
+                        type: string
+                    required:
+                      - event
+                    type: object
+                  minItems: 1
+                  type: array
               required:
-                - url
-              type: object
-            status:
-              properties:
-                knowledge_graph:
-                  description: KnowledgeGraph tracks the status of the knowledge graph per branch.
-                  properties:
-                    branches:
-                      description: Branches contains per-branch KG status.
-                      items:
-                        properties:
-                          annotations:
-                            additionalProperties:
-                              type: string
-                            description: |-
-                              Annotations is additional Status fields for the Resource to save some
-                              additional State as well as convey more information to the user. This is
-                              roughly akin to Annotations on any k8s resource, just the reconciler conveying
-                              richer information outwards.
-                            type: object
-                          communityCount:
-                            description: CommunityCount is the number of detected communities.
-                            type: integer
-                          conditions:
-                            description: Conditions the latest available observations of a resource's current state.
-                            items:
-                              description: |-
-                                Condition defines a readiness condition for a Knative resource.
-                                See: https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
-                              properties:
-                                lastTransitionTime:
-                                  description: |-
-                                    LastTransitionTime is the last time the condition transitioned from one status to another.
-                                    We use VolatileTime in place of metav1.Time to exclude this from creating equality.Semantic
-                                    differences (all other things held constant).
-                                  type: string
-                                message:
-                                  description: A human readable message indicating details about the transition.
-                                  type: string
-                                reason:
-                                  description: The reason for the condition's last transition.
-                                  type: string
-                                severity:
-                                  description: |-
-                                    Severity with which to treat failures of this type of condition.
-                                    When this is not specified, it defaults to Error.
-                                  type: string
-                                status:
-                                  description: Status of the condition, one of True, False, Unknown.
-                                  type: string
-                                type:
-                                  description: Type of condition.
-                                  type: string
-                              required:
-                                - status
-                                - type
-                              type: object
-                            type: array
-                          edgeCount:
-                            description: EdgeCount is the number of edges in the graph.
-                            type: integer
-                          lastCommitSHA:
-                            description: LastCommitSHA is the commit SHA the KG was last built from.
-                            type: string
-                          lastUpdated:
-                            description: LastUpdated is the last time the KG was updated.
-                            format: date-time
-                            type: string
-                          name:
-                            description: Name of the branch.
-                            type: string
-                          nodeCount:
-                            description: NodeCount is the number of nodes in the graph.
-                            type: integer
-                          observedGeneration:
-                            description: |-
-                              ObservedGeneration is the 'Generation' of the Service that
-                              was last processed by the controller.
-                            format: int64
-                            type: integer
-                        required:
-                          - name
-                        type: object
-                      type: array
-                  type: object
+                - limits
+                - purpose
+                - triggers
               type: object
           required:
             - metadata

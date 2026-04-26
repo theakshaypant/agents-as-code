@@ -22,6 +22,7 @@ echo "=== Generating CRD schemas with OpenAPI validation ==="
 CRD_FILES=(
   "config/300-repository.yaml"
   "config/300-agent.yaml"
+  "config/300-agentrun.yaml"
 )
 
 for FILENAME in "${CRD_FILES[@]}"; do
@@ -32,11 +33,13 @@ for FILENAME in "${CRD_FILES[@]}"; do
   GROUP=${GROUP#"  group: "}
   API_SUBDIR=${GROUP%".tekton.dev"}
 
+  PLURAL=$(yq eval '.spec.names.plural' "$FILENAME")
+
   TEMP_DIR=$(mktemp -d)
   cp -p "$FILENAME" "$TEMP_DIR/."
   LOG_FILE="$TEMP_DIR_LOGS/log-schema-generation-$BASENAME"
 
-  echo "  Processing API group: $GROUP, subdir: $API_SUBDIR"
+  echo "  Processing API group: $GROUP, subdir: $API_SUBDIR, plural: $PLURAL"
 
   counter=0 limit=5
   while [ "$counter" -lt "$limit" ]; do
@@ -52,7 +55,7 @@ for FILENAME in "${CRD_FILES[@]}"; do
       echo "  Successfully generated schema"
 
       if command -v yq >/dev/null 2>&1 && yq --version | grep -q "mikefarah/yq"; then
-        AUTO_GENERATED_CRD=$(find "$TEMP_DIR" -name "${GROUP}_*.yaml" | grep -v "$(basename "$FILENAME")" | head -1)
+        AUTO_GENERATED_CRD="$TEMP_DIR/${GROUP}_${PLURAL}.yaml"
 
         if [ -n "$AUTO_GENERATED_CRD" ] && [ -f "$AUTO_GENERATED_CRD" ]; then
           yq eval '.spec.versions[0].schema' "$AUTO_GENERATED_CRD" >/tmp/schema.yaml

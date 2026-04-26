@@ -1,0 +1,227 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: agentruns.agent.tekton.dev
+  labels:
+    app.kubernetes.io/version: "devel"
+    app.kubernetes.io/instance: default
+    app.kubernetes.io/part-of: yeet
+spec:
+  group: agent.tekton.dev
+  names:
+    kind: AgentRun
+    listKind: AgentRunList
+    plural: agentruns
+    shortNames:
+      - ar
+    singular: agentrun
+  scope: Namespaced
+  versions:
+    - additionalPrinterColumns:
+        - jsonPath: .spec.agentRef
+          name: Agent
+          type: string
+        - jsonPath: .spec.repositoryRef
+          name: Repository
+          type: string
+        - jsonPath: .status.conditions[-1:].type
+          name: Status
+          type: string
+      name: v1alpha1
+      schema:
+        openAPIV3Schema:
+          description: |-
+            AgentRun is an execution instance spawned when a git event matches an
+            Agent definition. Created automatically by the webhook handler, reconciled
+            by the AgentRun controller which provisions a sandbox and runs the agent.
+          properties:
+            apiVersion:
+              description: |-
+                APIVersion defines the versioned schema of this representation of an object.
+                Servers should convert recognized schemas to the latest internal value, and
+                may reject unrecognized values.
+                More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+              type: string
+            kind:
+              description: |-
+                Kind is a string value representing the REST resource this object represents.
+                Servers may infer this from the endpoint the client submits requests to.
+                Cannot be updated.
+                In CamelCase.
+                More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+              type: string
+            metadata:
+              type: object
+            spec:
+              properties:
+                agentRef:
+                  description: AgentRef is the name of the matched Agent definition.
+                  type: string
+                context:
+                  description: |-
+                    Context holds the filtered KG subgraph metadata.
+                    Nil when context filtering is not yet performed.
+                  properties:
+                    depth:
+                      description: Depth is the max hops from seed nodes used during traversal.
+                      type: integer
+                    seedNodes:
+                      description: SeedNodes are the KG nodes used as traversal starting points.
+                      items:
+                        type: string
+                      type: array
+                    strategy:
+                      description: Strategy is the graph traversal strategy used (bfs, dfs, community, impact).
+                      type: string
+                    subgraphRef:
+                      description: SubgraphRef is the path to the filtered KG subgraph file.
+                      type: string
+                    tokenCount:
+                      description: TokenCount is the token count of the filtered subgraph.
+                      type: integer
+                  type: object
+                event:
+                  description: Event describes the git event that triggered this run.
+                  properties:
+                    branch:
+                      description: Branch is the target branch.
+                      type: string
+                    sender:
+                      description: Sender is the user who triggered the event.
+                      type: string
+                    sha:
+                      description: SHA is the commit SHA associated with the event.
+                      type: string
+                    type:
+                      description: Type is the git event type (e.g. "issue_comment", "pull_request", "push").
+                      type: string
+                    url:
+                      description: URL is a deep link to the triggering event (comment, PR, commit).
+                      type: string
+                  required:
+                    - sender
+                    - type
+                  type: object
+                limits:
+                  description: Limits constrains execution, copied from the Agent definition.
+                  properties:
+                    maxTokens:
+                      description: MaxTokens is the maximum tokens per AgentRun.
+                      minimum: 1
+                      type: integer
+                    timeoutSeconds:
+                      description: TimeoutSeconds is the maximum execution time.
+                      minimum: 1
+                      type: integer
+                  required:
+                    - maxTokens
+                    - timeoutSeconds
+                  type: object
+                purpose:
+                  description: |-
+                    Purpose is the agent's purpose, copied from the Agent definition
+                    at creation time so the reconciler can construct the task without
+                    re-fetching agent YAML from the git provider.
+                  type: string
+                repositoryRef:
+                  description: RepositoryRef is the name of the Repository CR in the same namespace.
+                  type: string
+              required:
+                - agentRef
+                - event
+                - limits
+                - purpose
+                - repositoryRef
+              type: object
+            status:
+              properties:
+                actions:
+                  description: Actions records what the agent did for audit.
+                  items:
+                    properties:
+                      sha:
+                        description: SHA of the resulting commit, if applicable.
+                        type: string
+                      type:
+                        description: Type of action taken (pr-comment, commit, status-check, create-pr, label).
+                        type: string
+                      url:
+                        description: URL of the resulting resource (e.g. comment URL, PR URL).
+                        type: string
+                    required:
+                      - type
+                    type: object
+                  type: array
+                annotations:
+                  additionalProperties:
+                    type: string
+                  description: |-
+                    Annotations is additional Status fields for the Resource to save some
+                    additional State as well as convey more information to the user. This is
+                    roughly akin to Annotations on any k8s resource, just the reconciler conveying
+                    richer information outwards.
+                  type: object
+                completionTime:
+                  description: CompletionTime is when the AgentRun finished.
+                  format: date-time
+                  type: string
+                conditions:
+                  description: Conditions the latest available observations of a resource's current state.
+                  items:
+                    description: |-
+                      Condition defines a readiness condition for a Knative resource.
+                      See: https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
+                    properties:
+                      lastTransitionTime:
+                        description: |-
+                          LastTransitionTime is the last time the condition transitioned from one status to another.
+                          We use VolatileTime in place of metav1.Time to exclude this from creating equality.Semantic
+                          differences (all other things held constant).
+                        type: string
+                      message:
+                        description: A human readable message indicating details about the transition.
+                        type: string
+                      reason:
+                        description: The reason for the condition's last transition.
+                        type: string
+                      severity:
+                        description: |-
+                          Severity with which to treat failures of this type of condition.
+                          When this is not specified, it defaults to Error.
+                        type: string
+                      status:
+                        description: Status of the condition, one of True, False, Unknown.
+                        type: string
+                      type:
+                        description: Type of condition.
+                        type: string
+                    required:
+                      - status
+                      - type
+                    type: object
+                  type: array
+                observedGeneration:
+                  description: |-
+                    ObservedGeneration is the 'Generation' of the Service that
+                    was last processed by the controller.
+                  format: int64
+                  type: integer
+                sandboxName:
+                  description: SandboxName tracks which sandbox instance executed this run.
+                  type: string
+                startTime:
+                  description: StartTime is when the AgentRun began executing.
+                  format: date-time
+                  type: string
+                tokensUsed:
+                  description: TokensUsed is the total LLM tokens consumed during execution.
+                  type: integer
+              type: object
+          required:
+            - metadata
+            - spec
+          type: object
+      served: true
+      storage: true
+      subresources:
+        status: {}
