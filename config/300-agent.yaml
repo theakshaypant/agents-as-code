@@ -50,11 +50,6 @@ spec:
             spec:
               properties:
                 context:
-                  description: |-
-                    for optional overrides of the purpose-inferred KG filtering strategy.
-                    When present, its fields take precedence over the profile inferred
-                    from Purpose. Partial overrides work (e.g. specifying only Depth
-                    keeps the inferred strategy but increases traversal depth).
                   properties:
                     depth:
                       description: Depth overrides the max hops from seed nodes.
@@ -96,35 +91,9 @@ spec:
                     Purpose is natural language describing what the agent does.
                     Drives automatic KG filtering strategy selection.
                   type: string
-                triggers:
-                  description: On defines which git events trigger this agent.
-                  items:
-                    properties:
-                      branches:
-                        description: Branches filters by target branch. Supports glob patterns (e.g. "release-*").
-                        items:
-                          type: string
-                        type: array
-                      event:
-                        description: |-
-                          Event is the git event type that triggers this agent.
-                          Supported: push, pull_request, pull_request_review, issue_comment,
-                          issues_labeled, pull_request_labeled.
-                        type: string
-                      match:
-                        description: |-
-                          Match triggers only when the comment body contains this string.
-                          Only applicable to issue_comment events.
-                        type: string
-                    required:
-                      - event
-                    type: object
-                  minItems: 1
-                  type: array
               required:
                 - limits
                 - purpose
-                - triggers
               type: object
           required:
             - metadata

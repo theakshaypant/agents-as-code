@@ -2,13 +2,12 @@ apiVersion: agent.tekton.dev/v1alpha1
 kind: Agent
 metadata:
   name: hello
+  annotations:
+    agent.tekton.dev/on-event: "[issue_comment, issues_labeled]"
+    agent.tekton.dev/on-comment: "/hello"
+    agent.tekton.dev/on-label: "hello"
 spec:
   purpose: Comment "Hello, World!" on issues and pull requests.
-  triggers:
-    - event: issue_comment
-      match: "/hello"
-    - event: issues_labeled
-      match: hello
   limits:
     maxTokens: 1000
     timeoutSeconds: 30

@@ -27,39 +27,12 @@ type AgentSpec struct {
 	// +kubebuilder:validation:Required
 	Purpose string `json:"purpose"`
 
-	// On defines which git events trigger this agent.
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:MinItems=1
-	On []AgentTrigger `json:"triggers"`
-
 	// Limits constrains agent execution.
 	// +kubebuilder:validation:Required
 	Limits AgentLimits `json:"limits"`
 
-	// TODO: Context filtering is not yet implemented. This field is reserved
-	// for optional overrides of the purpose-inferred KG filtering strategy.
-	// When present, its fields take precedence over the profile inferred
-	// from Purpose. Partial overrides work (e.g. specifying only Depth
-	// keeps the inferred strategy but increases traversal depth).
 	// +optional
 	Context *AgentContext `json:"context,omitempty"`
-}
-
-type AgentTrigger struct {
-	// Event is the git event type that triggers this agent.
-	// Supported: push, pull_request, pull_request_review, issue_comment,
-	// issues_labeled, pull_request_labeled.
-	// +kubebuilder:validation:Required
-	Event string `json:"event"`
-
-	// Match triggers only when the comment body contains this string.
-	// Only applicable to issue_comment events.
-	// +optional
-	Match string `json:"match,omitempty"`
-
-	// Branches filters by target branch. Supports glob patterns (e.g. "release-*").
-	// +optional
-	Branches []string `json:"branches,omitempty"`
 }
 
 type AgentLimits struct {

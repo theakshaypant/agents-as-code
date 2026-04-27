@@ -259,9 +259,9 @@ func (a *Adapter) processEvent(ctx context.Context, evt *provider.Event, prov pr
 		logger.Infow("agent matched",
 			"agent", m.Agent.Name,
 			"purpose", m.Agent.Spec.Purpose,
-			"trigger_event", m.Trigger.Event,
 		)
 		// TODO: create AgentRun CR for each matched agent
+		// Copy trigger annotations: matcher.TriggerAnnotations(m.Agent.GetAnnotations())
 	}
 }
 
@@ -282,8 +282,16 @@ func (a *Adapter) matchAgents(ctx context.Context, evt *provider.Event, prov pro
 		return nil
 	}
 
+	var changedFiles []string
+	files, err := prov.GetFiles(ctx, evt)
+	if err != nil {
+		logger.Warnf("failed to fetch changed files (on-path-change will not match): %v", err)
+	} else {
+		changedFiles = files
+	}
+
 	logger.Infow("discovered agent definitions", "count", len(agents))
-	return matcher.MatchAgentsToEvent(agents, evt, logger)
+	return matcher.MatchAgentsToEvent(agents, evt, changedFiles, logger)
 }
 
 type response struct {

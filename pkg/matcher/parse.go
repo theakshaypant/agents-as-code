@@ -2,11 +2,13 @@ package matcher
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"k8s.io/apimachinery/pkg/util/yaml"
 
 	"github.com/theakshaypant/agents-as-code/pkg/apis/agent"
+	"github.com/theakshaypant/agents-as-code/pkg/apis/agent/keys"
 	agentv1alpha1 "github.com/theakshaypant/agents-as-code/pkg/apis/agent/v1alpha1"
 )
 
@@ -50,6 +52,11 @@ func ParseAgentDefinitions(rawYAML string) ([]agentv1alpha1.Agent, error) {
 	return agents, nil
 }
 
+var validEvents = map[string]bool{
+	"push": true, "pull_request": true, "pull_request_review": true,
+	"issue_comment": true, "issues_labeled": true, "pull_request_labeled": true,
+}
+
 func validateAgent(a *agentv1alpha1.Agent) error {
 	if a.Name == "" {
 		return fmt.Errorf("metadata.name is required")
@@ -57,14 +64,37 @@ func validateAgent(a *agentv1alpha1.Agent) error {
 	if a.Spec.Purpose == "" {
 		return fmt.Errorf("spec.purpose is required")
 	}
-	if len(a.Spec.On) == 0 {
-		return fmt.Errorf("spec.on requires at least one trigger")
+
+	annots := a.GetAnnotations()
+	eventVal, ok := annots[keys.OnEvent]
+	if !ok {
+		return fmt.Errorf("annotation %s is required", keys.OnEvent)
 	}
-	for i, trigger := range a.Spec.On {
-		if trigger.Event == "" {
-			return fmt.Errorf("spec.on[%d].event is required", i)
+	events, err := getAnnotationValues(eventVal)
+	if err != nil {
+		return fmt.Errorf("annotation %s: %w", keys.OnEvent, err)
+	}
+	if len(events) == 0 {
+		return fmt.Errorf("annotation %s must have at least one value", keys.OnEvent)
+	}
+	for _, e := range events {
+		if !validEvents[e] {
+			return fmt.Errorf("annotation %s contains invalid event type %q", keys.OnEvent, e)
 		}
 	}
+
+	if commentVal, ok := annots[keys.OnComment]; ok {
+		patterns, err := getAnnotationValues(commentVal)
+		if err != nil {
+			return fmt.Errorf("annotation %s: %w", keys.OnComment, err)
+		}
+		for _, p := range patterns {
+			if _, err := regexp.Compile(p); err != nil {
+				return fmt.Errorf("annotation %s contains invalid regex %q: %w", keys.OnComment, p, err)
+			}
+		}
+	}
+
 	if a.Spec.Limits.MaxTokens <= 0 {
 		return fmt.Errorf("spec.limits.maxTokens must be positive")
 	}
