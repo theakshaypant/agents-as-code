@@ -136,15 +136,11 @@ apiVersion: agent.tekton.dev/v1alpha1
 kind: Agent
 metadata:
   name: coding-agent
+  annotations:
+    agent.tekton.dev/on-event: "issue_comment"
+    agent.tekton.dev/on-comment: "/assign|/implement"
 spec:
   purpose: "Implement code changes for assigned issues"
-
-  triggers:
-    - event: issue_comment
-      match: "/assign"
-    - event: issue_comment
-      match: "/implement"
-
   limits:
     maxTokens: 100000
     timeoutSeconds: 600
@@ -155,26 +151,32 @@ apiVersion: agent.tekton.dev/v1alpha1
 kind: Agent
 metadata:
   name: review-agent
+  annotations:
+    agent.tekton.dev/on-event: "[pull_request, issue_comment]"
+    agent.tekton.dev/on-target-branch: "main"
+    agent.tekton.dev/on-comment: "/review"
 spec:
   purpose: "Review pull requests for bugs, security issues, and style"
-  triggers:
-    - event: pull_request
-      branches:
-        - main
-    - event: issue_comment
-      match: "/review"
   limits:
     maxTokens: 50000
     timeoutSeconds: 300
 ```
 
-**Trigger fields:**
+**Trigger annotations:**
 
-| Field | Description |
-|-------|-------------|
-| `event` | Required. One of: `push`, `pull_request`, `pull_request_review`, `issue_comment`, `issues_labeled`, `pull_request_labeled`. |
-| `branches` | Optional. Glob patterns for target branch filtering. |
-| `match` | Optional. For `issue_comment`: matches if the comment body contains this string. For `issues_labeled` / `pull_request_labeled`: matches if the label name equals this string exactly. |
+Triggers are declared as annotations on Agent metadata using the `agent.tekton.dev/` prefix, following PaC's annotation-based matching model.
+
+| Annotation | Description | Default (absent) |
+|------------|-------------|------------------|
+| `on-event` | Required. Event types: `push`, `pull_request`, `pull_request_review`, `issue_comment`, `issues_labeled`, `pull_request_labeled`. |  — |
+| `on-target-branch` | Glob patterns for target branch filtering. | Match all |
+| `on-comment` | Regex match on comment body. Checked as a separate matching track — if present and matched, the agent is selected immediately. | Pass |
+| `on-path-change` | Glob match on changed files. | Pass |
+| `on-label` | Label match for `issues_labeled` / `pull_request_labeled` events. Label events without this annotation do not match. | Pass |
+
+**Value format:** single value (`"push"`) or bracket array (`"[push, pull_request]"`).
+
+**Matching semantics:** `on-comment` is a separate matching track (checked first, bypasses other annotations when matched). For the standard path, all present annotations are AND'd — all must match. Within each annotation, array values are OR'd.
 
 **Optional context override** — for users who want explicit control over KG filtering instead of relying on purpose-based inference:
 
@@ -210,6 +212,9 @@ metadata:
   labels:
     agent.tekton.dev/agent: coding-agent
     agent.tekton.dev/repository: my-repo
+  annotations:
+    agent.tekton.dev/on-event: "issue_comment"
+    agent.tekton.dev/on-comment: "/assign|/implement"
 spec:
   agentRef: coding-agent
   event:
@@ -377,6 +382,7 @@ All results are git actions, so visibility is governed by existing VCS permissio
 8. **Agent results are git actions only** — comments, commits, PRs, status checks, labels
 9. **Graphify as the KG engine** — accept current limitations, iterate later
 10. **LLM config on Repository CR, not on agents** — avoids secret sprawl, agents stay declarative
+11. **Annotation-based triggers** — trigger matching uses `metadata.annotations` with PaC-style semantics, not structured spec fields
 
 ## Open Questions
 

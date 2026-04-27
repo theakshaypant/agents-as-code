@@ -38,16 +38,14 @@ apiVersion: agent.tekton.dev/v1alpha1
 kind: Agent
 metadata:
   name: triage
+  annotations:
+    agent.tekton.dev/on-event: "[pull_request, issue_comment]"
+    agent.tekton.dev/on-target-branch: "main"
+    agent.tekton.dev/on-comment: "/triage"
 spec:
   purpose: >
     Triage incoming pull requests. Label by area,
     assess complexity, and identify reviewers.
-  triggers:
-    - event: pull_request
-      branches:
-        - main
-    - event: issue_comment
-      match: "/triage"
   limits:
     maxTokens: 8000
     timeoutSeconds: 120
@@ -55,16 +53,23 @@ spec:
 
 Agents describe their purpose in natural language. AAC infers the right knowledge graph filtering strategy — no manual context configuration needed.
 
-## Supported Triggers
+## Trigger Annotations
 
-| Trigger | Description |
-|---------|-------------|
-| `push` | Code pushed to a branch |
-| `pull_request` | PR opened, synchronized, or reopened |
-| `pull_request_review` | PR review submitted |
-| `issue_comment` | Comment on an issue or PR |
-| `issues_labeled` | Label added to an issue |
-| `pull_request_labeled` | Label added to a PR |
+Triggers are declared as annotations on Agent metadata, following PaC's annotation-based matching model. Annotations use the `agent.tekton.dev/` prefix.
+
+| Annotation | Description | Default (absent) |
+|------------|-------------|------------------|
+| `on-event` | Event types to match (required) | — |
+| `on-target-branch` | Branch glob patterns | Match all |
+| `on-comment` | Regex match on comment body | Pass |
+| `on-path-change` | Glob match on changed files | Pass |
+| `on-label` | Label match for labeled events | Pass |
+
+**Value format:** single value (`"push"`) or bracket array (`"[push, pull_request]"`). Use `&#44;` for literal commas within values.
+
+**Matching semantics:** `on-comment` is checked first as a separate track — if present and matched, the agent is selected immediately. For the standard path, all present annotations are AND'd (all must match). Within each annotation, array values are OR'd.
+
+**Supported events:** `push`, `pull_request`, `pull_request_review`, `issue_comment`, `issues_labeled`, `pull_request_labeled`
 
 ## Documentation
 
