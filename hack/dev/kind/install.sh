@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Sets up a kind cluster with yeet deployed via ko.
+# Sets up a kind cluster with agents-as-code deployed via ko.
 #
 # Prerequisites:
 #   - kind: https://kind.sigs.k8s.io/docs/user/quick-start/#installation
@@ -8,10 +8,10 @@
 #
 # Webhook forwarding:
 #   1. Create a smee URL at https://hook.pipelinesascode.com
-#   2. Export it: export YEET_SMEEURL=https://hook.pipelinesascode.com/aBcDeF
+#   2. Export it: export AAC_SMEEURL=https://hook.pipelinesascode.com/aBcDeF
 #   3. Run this script
 #   4. In a separate terminal:
-#      gosmee client --saveDir /tmp/replays $YEET_SMEEURL http://webhook.yeet-127-0-0-1.nip.io
+#      gosmee client --saveDir /tmp/replays $AAC_SMEEURL http://webhook.aac-127-0-0-1.nip.io
 #
 # Secrets:
 #   Copy .env.example to .env at the repo root and fill in:
@@ -20,8 +20,8 @@
 set -euf
 cd $(dirname $(readlink -f ${0}))
 
-YEET_DIR=$(cd ../../.. && pwd)
-ENV_FILE="${YEET_DIR}/.env"
+AAC_DIR=$(cd ../../.. && pwd)
+ENV_FILE="${AAC_DIR}/.env"
 
 if [[ -f "${ENV_FILE}" ]]; then
   set -a
@@ -29,15 +29,15 @@ if [[ -f "${ENV_FILE}" ]]; then
   set +a
 fi
 
-export KIND_CLUSTER_NAME=${KIND_CLUSTER_NAME:-yeet}
+export KIND_CLUSTER_NAME=${KIND_CLUSTER_NAME:-aac}
 export KUBECONFIG=${KUBECONFIG:-${HOME}/.kube/config}
-export DOMAIN_NAME=yeet-127-0-0-1.nip.io
+export DOMAIN_NAME=aac-127-0-0-1.nip.io
 
-if [[ -z "${YEET_SMEEURL:-}" ]]; then
+if [[ -z "${AAC_SMEEURL:-}" ]]; then
   echo "You need to forward webhooks via smee."
   echo "Create a URL at https://hook.pipelinesascode.com"
-  echo "Then export it: YEET_SMEEURL=https://hook.pipelinesascode.com/XXXXXXXX"
-  echo "Alternatively: YEET_SMEEURL=\$(curl https://hook.pipelinesascode.com -o=/dev/null -sw '%{redirect_url}')"
+  echo "Then export it: AAC_SMEEURL=https://hook.pipelinesascode.com/XXXXXXXX"
+  echo "Alternatively: AAC_SMEEURL=\$(curl https://hook.pipelinesascode.com -o=/dev/null -sw '%{redirect_url}')"
   exit 1
 fi
 
@@ -51,7 +51,7 @@ done
 kind=$(type -p kind)
 ko=$(type -p ko)
 
-TMPD=$(mktemp -d /tmp/.YEETXXXX)
+TMPD=$(mktemp -d /tmp/.AACXXXX)
 REG_PORT=${REG_PORT:-'5000'}
 REG_NAME='kind-registry'
 NO_REINSTALL_KIND=${NO_REINSTALL_KIND:-""}
@@ -130,22 +130,22 @@ function install_nginx() {
   echo "done."
 }
 
-function install_yeet() {
-  echo "Deploying yeet from ${YEET_DIR}"
+function install_aac() {
+  echo "Deploying agents-as-code from ${AAC_DIR}"
   oldPwd=${PWD}
-  cd ${YEET_DIR}
+  cd ${AAC_DIR}
   env KO_DOCKER_REPO=localhost:${REG_PORT} ${ko} apply -f config --sbom=none -B >/dev/null
   cd ${oldPwd}
-  configure_yeet
+  configure_aac
   echo "webhook: http://webhook.${DOMAIN_NAME}"
 }
 
-function configure_yeet() {
+function configure_aac() {
   sed -e "s,%DOMAIN_NAME%,${DOMAIN_NAME}," ingress-webhook.yaml | kubectl apply -f-
 
   if [[ -n "${GITHUB_WEBHOOK_SECRET:-}" ]]; then
-    echo "Installing yeet-github-app secret from .env"
-    kubectl delete secret yeet-github-app -n yeet-system 2>/dev/null || true
+    echo "Installing agents-as-code-github-app secret from .env"
+    kubectl delete secret agents-as-code-github-app -n agents-as-code-system 2>/dev/null || true
 
     secret_args=(
       --from-literal=webhook.secret="${GITHUB_WEBHOOK_SECRET}"
@@ -161,17 +161,17 @@ function configure_yeet() {
       secret_args+=(--from-file=github-private-key="${GITHUB_PRIVATE_KEY_PATH}")
     fi
 
-    kubectl create secret generic yeet-github-app -n yeet-system "${secret_args[@]}"
+    kubectl create secret generic agents-as-code-github-app -n agents-as-code-system "${secret_args[@]}"
   else
     echo "No secret installed (GITHUB_WEBHOOK_SECRET not set in .env)."
     echo "Copy .env.example to .env and fill in the values, or create the secret manually:"
-    echo "  kubectl create secret generic yeet-github-app -n yeet-system \\"
+    echo "  kubectl create secret generic agents-as-code-github-app -n agents-as-code-system \\"
     echo "    --from-literal=webhook.secret=<secret>"
   fi
 
-  echo "Set active namespace to yeet-system"
-  kubectl config set-context --current --namespace=yeet-system >/dev/null
-  echo "Run: gosmee client --saveDir /tmp/replays ${YEET_SMEEURL} http://webhook.${DOMAIN_NAME}"
+  echo "Set active namespace to agents-as-code-system"
+  kubectl config set-context --current --namespace=agents-as-code-system >/dev/null
+  echo "Run: gosmee client --saveDir /tmp/replays ${AAC_SMEEURL} http://webhook.${DOMAIN_NAME}"
 }
 
 main() {
@@ -182,7 +182,7 @@ main() {
     echo "Skipping kind reinstall"
   fi
   install_nginx
-  install_yeet
+  install_aac
   echo ""
   echo "Done!"
   echo "Using registry on localhost:${REG_PORT}"
@@ -194,11 +194,11 @@ Usage: $0 [OPTIONS]
 
 Options:
   -h          Show this message
-  -b          Only install registry/kind/nginx (no yeet)
-  -c          Configure yeet only (ingress + secrets)
-  -y          Install only yeet (ko apply + configure)
-  -R          Restart yeet pods
-  -O          Don't reinstall kind, continue with nginx + yeet
+  -b          Only install registry/kind/nginx (no agents-as-code)
+  -c          Configure agents-as-code only (ingress + secrets)
+  -y          Install only agents-as-code (ko apply + configure)
+  -R          Restart agents-as-code pods
+  -O          Don't reinstall kind, continue with nginx + agents-as-code
 EOF
 }
 
@@ -215,16 +215,16 @@ while getopts "hbcyRO" o; do
     exit
     ;;
   c)
-    configure_yeet
+    configure_aac
     exit
     ;;
   y)
-    install_yeet
+    install_aac
     exit
     ;;
   R)
-    echo "Restarting yeet pods"
-    kubectl delete pod -l app.kubernetes.io/part-of=yeet -n yeet-system || true
+    echo "Restarting agents-as-code pods"
+    kubectl delete pod -l app.kubernetes.io/part-of=agents-as-code -n agents-as-code-system || true
     exit
     ;;
   O)

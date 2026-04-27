@@ -5,7 +5,7 @@ metadata:
   labels:
     app.kubernetes.io/version: "devel"
     app.kubernetes.io/instance: default
-    app.kubernetes.io/part-of: yeet
+    app.kubernetes.io/part-of: agents-as-code
 spec:
   group: agent.tekton.dev
   names:

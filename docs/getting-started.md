@@ -1,6 +1,6 @@
-# Getting Started with Yeet
+# Getting Started with Agents as Code (AAC)
 
-This guide walks you through deploying yeet on a local kind cluster, pointing it at a GitHub repository, and watching it receive webhook events and match agent definitions.
+This guide walks you through deploying AAC on a local kind cluster, pointing it at a GitHub repository, and watching it receive webhook events and match agent definitions.
 
 ## Prerequisites
 
@@ -44,9 +44,9 @@ Under **"Which events would you like to trigger this webhook?"**, select **"Let 
 - **Issue comments**
 - **Issues**
 
-These map to yeet's supported trigger types:
+These map to AAC's supported trigger types:
 
-| GitHub event | Supported actions | Yeet trigger |
+| GitHub event | Supported actions | AAC trigger |
 |---|---|---|
 | Pushes | all | `push` |
 | Pull requests | opened, synchronize, reopened | `pull_request` |
@@ -57,7 +57,7 @@ These map to yeet's supported trigger types:
 
 ## 3. Create a GitHub Personal Access Token
 
-The token is used by yeet to fetch agent definitions from the repository and check commenter permissions.
+The token is used by AAC to fetch agent definitions from the repository and check commenter permissions.
 
 **Classic token** — create at **Settings > Developer settings > Personal access tokens > Tokens (classic)**:
 
@@ -85,7 +85,7 @@ Fill in the values:
 
 ```bash
 # The smee URL from step 1
-YEET_SMEEURL=https://hook.pipelinesascode.com/aBcDeF
+AAC_SMEEURL=https://hook.pipelinesascode.com/aBcDeF
 
 # The webhook secret you set in step 2
 GITHUB_WEBHOOK_SECRET=your-webhook-secret
@@ -110,7 +110,7 @@ AI_API_KEY=your-api-key
 ## 5. Deploy
 
 ```bash
-# Full setup: kind cluster + nginx + yeet + secrets
+# Full setup: kind cluster + nginx + AAC + secrets
 make kind-setup
 
 # Create the Repository CR
@@ -118,10 +118,10 @@ make setup-repo
 ```
 
 This creates:
-- A kind cluster named `yeet`
+- A kind cluster named `aac`
 - nginx ingress controller
-- yeet controller and webhook deployments in `yeet-system`
-- A `yeet-github-app` secret with your webhook secret
+- AAC controller and webhook deployments in `agents-as-code-system`
+- An `agents-as-code-github-app` secret with your webhook secret
 - A Repository CR pointing at your repo with git token and webhook secrets
 - An AI API key secret (if `AI_ENABLED=true`)
 
@@ -130,10 +130,10 @@ This creates:
 In a separate terminal:
 
 ```bash
-gosmee client --saveDir /tmp/replays $YEET_SMEEURL http://webhook.yeet-127-0-0-1.nip.io
+gosmee client --saveDir /tmp/replays $AAC_SMEEURL http://webhook.aac-127-0-0-1.nip.io
 ```
 
-This forwards GitHub webhook deliveries from your smee channel to the yeet webhook running in kind. The `--saveDir` flag saves replays so you can re-send events later without triggering them on GitHub again.
+This forwards GitHub webhook deliveries from your smee channel to the AAC webhook running in kind. The `--saveDir` flag saves replays so you can re-send events later without triggering them on GitHub again.
 
 ## 7. Add Agent Definitions to Your Repository
 
@@ -254,7 +254,7 @@ agent matched  agent=triage purpose="Triage incoming pull requests..."  trigger_
 gosmee saves webhook payloads to `/tmp/replays`. To replay a saved event:
 
 ```bash
-gosmee replay --targetURL http://webhook.yeet-127-0-0-1.nip.io /tmp/replays/<event-file>.json
+gosmee replay --targetURL http://webhook.aac-127-0-0-1.nip.io /tmp/replays/<event-file>.json
 ```
 
 This is useful for iterating on agent definitions without triggering new events on GitHub.

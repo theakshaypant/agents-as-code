@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	gh "github.com/google/go-github/v84/github"
-	"github.com/theakshaypant/yeet/pkg/provider"
+	"github.com/theakshaypant/agents-as-code/pkg/provider"
 )
 
 func (p *Provider) ParsePayload(_ context.Context, req *http.Request, payload string) (*provider.Event, error) {

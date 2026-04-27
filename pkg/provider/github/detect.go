@@ -6,7 +6,7 @@ import (
 	"slices"
 
 	gh "github.com/google/go-github/v84/github"
-	"github.com/theakshaypant/yeet/pkg/provider"
+	"github.com/theakshaypant/agents-as-code/pkg/provider"
 	"go.uber.org/zap"
 )
 

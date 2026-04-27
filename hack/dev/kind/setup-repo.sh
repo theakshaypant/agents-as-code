@@ -8,15 +8,15 @@
 #
 # Optional:
 #   REPO_NAME      — CR name (default: derived from REPO_URL)
-#   REPO_NAMESPACE — namespace for the CR (default: yeet-system)
+#   REPO_NAMESPACE — namespace for the CR (default: agents-as-code-system)
 #   AI_ENABLED     — enable AI agents (default: false)
 #   AI_PROVIDER    — LLM provider name (e.g. anthropic, openai)
 #   AI_API_KEY     — LLM API key
 set -euf
 cd $(dirname $(readlink -f ${0}))
 
-YEET_DIR=$(cd ../../.. && pwd)
-ENV_FILE="${YEET_DIR}/.env"
+AAC_DIR=$(cd ../../.. && pwd)
+ENV_FILE="${AAC_DIR}/.env"
 
 if [[ -f "${ENV_FILE}" ]]; then
   set -a
@@ -39,7 +39,7 @@ if [[ -z "${GITHUB_WEBHOOK_SECRET:-}" ]]; then
   exit 1
 fi
 
-NAMESPACE=${REPO_NAMESPACE:-yeet-system}
+NAMESPACE=${REPO_NAMESPACE:-agents-as-code-system}
 
 if [[ -n "${REPO_NAME:-}" ]]; then
   NAME="${REPO_NAME}"

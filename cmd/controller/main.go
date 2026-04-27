@@ -12,9 +12,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	agentv1alpha1 "github.com/theakshaypant/yeet/pkg/apis/agent/v1alpha1"
-	"github.com/theakshaypant/yeet/pkg/knowledgegraph/graphify"
-	repository "github.com/theakshaypant/yeet/pkg/reconciler/repository"
+	agentv1alpha1 "github.com/theakshaypant/agents-as-code/pkg/apis/agent/v1alpha1"
+	"github.com/theakshaypant/agents-as-code/pkg/knowledgegraph/graphify"
+	repository "github.com/theakshaypant/agents-as-code/pkg/reconciler/repository"
 )
 
 var scheme = runtime.NewScheme()

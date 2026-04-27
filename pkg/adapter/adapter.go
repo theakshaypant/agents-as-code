@@ -12,13 +12,13 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	agentv1alpha1 "github.com/theakshaypant/yeet/pkg/apis/agent/v1alpha1"
-	"github.com/theakshaypant/yeet/pkg/matcher"
-	"github.com/theakshaypant/yeet/pkg/provider"
+	agentv1alpha1 "github.com/theakshaypant/agents-as-code/pkg/apis/agent/v1alpha1"
+	"github.com/theakshaypant/agents-as-code/pkg/matcher"
+	"github.com/theakshaypant/agents-as-code/pkg/provider"
 )
 
 const (
-	DefaultGlobalSecretName = "yeet-github-app"
+	DefaultGlobalSecretName = "agents-as-code-github-app"
 	GlobalWebhookSecretKey  = "webhook.secret"
 )
 

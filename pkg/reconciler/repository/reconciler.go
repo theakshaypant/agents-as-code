@@ -9,8 +9,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	agentv1alpha1 "github.com/theakshaypant/yeet/pkg/apis/agent/v1alpha1"
-	"github.com/theakshaypant/yeet/pkg/knowledgegraph"
+	agentv1alpha1 "github.com/theakshaypant/agents-as-code/pkg/apis/agent/v1alpha1"
+	"github.com/theakshaypant/agents-as-code/pkg/knowledgegraph"
 )
 
 type Reconciler struct {

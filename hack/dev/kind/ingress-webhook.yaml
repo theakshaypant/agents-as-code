@@ -2,10 +2,10 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: yeet-webhook
-  namespace: yeet-system
+  name: agents-as-code-webhook
+  namespace: agents-as-code-system
   labels:
-    yeet/route: webhook
+    agents-as-code/route: webhook
 spec:
   ingressClassName: nginx
   rules:
@@ -14,7 +14,7 @@ spec:
       paths:
       - backend:
           service:
-            name: yeet-webhook
+            name: agents-as-code-webhook
             port:
               number: 8080
         path: /

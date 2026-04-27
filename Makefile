@@ -3,7 +3,7 @@
        setup-repo logs-webhook logs-controller
 
 SHELL := /bin/bash
-KIND_CLUSTER_NAME ?= yeet
+KIND_CLUSTER_NAME ?= aac
 REG_PORT ?= 5000
 KO ?= $(shell which ko)
 
@@ -42,20 +42,20 @@ generate: ## Regenerate deepcopy and CRD schemas
 kind-setup: ## Full kind setup: cluster + nginx + deploy + secrets
 	./hack/dev/kind/install.sh
 
-kind-base: ## Create kind cluster + nginx only (no yeet)
+kind-base: ## Create kind cluster + nginx only (no agents-as-code)
 	./hack/dev/kind/install.sh -b
 
-kind-deploy: ## Deploy yeet to existing kind cluster (ko apply)
+kind-deploy: ## Deploy agents-as-code to existing kind cluster (ko apply)
 	./hack/dev/kind/install.sh -y
 
-kind-redeploy: ## Rebuild and redeploy yeet (ko apply + restart pods)
+kind-redeploy: ## Rebuild and redeploy agents-as-code (ko apply + restart pods)
 	./hack/dev/kind/install.sh -y
 	./hack/dev/kind/install.sh -R
 
-kind-configure: ## Reconfigure yeet (ingress + secrets) without rebuild
+kind-configure: ## Reconfigure agents-as-code (ingress + secrets) without rebuild
 	./hack/dev/kind/install.sh -c
 
-kind-restart: ## Restart yeet pods
+kind-restart: ## Restart agents-as-code pods
 	./hack/dev/kind/install.sh -R
 
 kind-delete: ## Delete the kind cluster
@@ -69,7 +69,7 @@ setup-repo: ## Create Repository CR and secrets from .env
 # ── Logs ─────────────────────────────────────────────────────────────
 
 logs-webhook: ## Tail webhook pod logs
-	kubectl logs -n yeet-system -l app.kubernetes.io/name=webhook -f
+	kubectl logs -n agents-as-code-system -l app.kubernetes.io/name=webhook -f
 
 logs-controller: ## Tail controller pod logs
-	kubectl logs -n yeet-system -l app.kubernetes.io/name=controller -f
+	kubectl logs -n agents-as-code-system -l app.kubernetes.io/name=controller -f

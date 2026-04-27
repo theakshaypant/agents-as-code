@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	agentv1alpha1 "github.com/theakshaypant/yeet/pkg/apis/agent/v1alpha1"
+	agentv1alpha1 "github.com/theakshaypant/agents-as-code/pkg/apis/agent/v1alpha1"
 )
 
 // Sandbox paths. TaskFile is written by the controller before execution.
@@ -15,7 +15,7 @@ import (
 // (injected via OpenHands system prompt), not the user's purpose.
 const (
 	TaskFile   = "/workspace/task.md"
-	ResultFile = "/workspace/.yeet/result.json"
+	ResultFile = "/workspace/.aac/result.json"
 )
 
 // LLM provider name → default OpenHands model identifier.

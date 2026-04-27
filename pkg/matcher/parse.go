@@ -6,8 +6,8 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/yaml"
 
-	"github.com/theakshaypant/yeet/pkg/apis/agent"
-	agentv1alpha1 "github.com/theakshaypant/yeet/pkg/apis/agent/v1alpha1"
+	"github.com/theakshaypant/agents-as-code/pkg/apis/agent"
+	agentv1alpha1 "github.com/theakshaypant/agents-as-code/pkg/apis/agent/v1alpha1"
 )
 
 const agentDir = ".tekton/agents"

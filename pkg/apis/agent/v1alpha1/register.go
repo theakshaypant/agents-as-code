@@ -1,7 +1,7 @@
 package v1alpha1
 
 import (
-	"github.com/theakshaypant/yeet/pkg/apis/agent"
+	"github.com/theakshaypant/agents-as-code/pkg/apis/agent"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"

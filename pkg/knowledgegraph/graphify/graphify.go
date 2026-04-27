@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os/exec"
 
-	"github.com/theakshaypant/yeet/pkg/knowledgegraph"
+	"github.com/theakshaypant/agents-as-code/pkg/knowledgegraph"
 )
 
 type Builder struct {

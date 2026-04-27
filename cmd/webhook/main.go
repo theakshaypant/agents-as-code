@@ -14,9 +14,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	agentv1alpha1 "github.com/theakshaypant/yeet/pkg/apis/agent/v1alpha1"
-	"github.com/theakshaypant/yeet/pkg/adapter"
-	"github.com/theakshaypant/yeet/pkg/provider/github"
+	agentv1alpha1 "github.com/theakshaypant/agents-as-code/pkg/apis/agent/v1alpha1"
+	"github.com/theakshaypant/agents-as-code/pkg/adapter"
+	"github.com/theakshaypant/agents-as-code/pkg/provider/github"
 )
 
 var scheme = runtime.NewScheme()
@@ -30,7 +30,7 @@ func main() {
 	var port string
 	var namespace string
 	flag.StringVar(&port, "port", "8082", "Webhook server port.")
-	flag.StringVar(&namespace, "namespace", "yeet-system", "Namespace where the controller and global secrets live.")
+	flag.StringVar(&namespace, "namespace", "agents-as-code-system", "Namespace where the controller and global secrets live.")
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseDevMode(true)))

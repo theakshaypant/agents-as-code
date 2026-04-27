@@ -1,14 +1,14 @@
-# Yeet Design
+# Agents as Code (AAC) Design
 
 ## Core Concepts
 
 **Knowledge Graph (KG)** — a persistent, incrementally-updated graph of a repository's code structure and relationships, stored on a PV. Built using graphify (tree-sitter for AST extraction, LLM for semantic extraction, Leiden/Louvain for community detection). Configured as a field on the Repository CR, updated incrementally on each push.
 
-**Agent** — a user-defined YAML template in `.tekton/agents/` describing what the agent does and which git events trigger it. The `purpose` field is natural language — yeet infers the right KG filtering strategy from it. No prompts, no context flags — just declare intent.
+**Agent** — a user-defined YAML template in `.tekton/agents/` describing what the agent does and which git events trigger it. The `purpose` field is natural language — AAC infers the right KG filtering strategy from it. No prompts, no context flags — just declare intent.
 
 **AgentRun** — an execution instance spawned per git event, receiving a filtered KG subgraph. The execution record, analogous to PipelineRun. Tracks what the agent did (comments posted, commits pushed, PRs created) for audit.
 
-All triggers are git events. Agents interact with the outside world exclusively through git primitives (PR comments, commits, status checks, labels), which re-enter yeet as new events — enabling agent chaining without special inter-agent protocols.
+All triggers are git events. Agents interact with the outside world exclusively through git primitives (PR comments, commits, status checks, labels), which re-enter AAC as new events — enabling agent chaining without special inter-agent protocols.
 
 ## Architecture
 
@@ -129,7 +129,7 @@ status:
 
 Agent definitions live in the repository under `.tekton/agents/`. They are version-controlled, reviewable in PRs, and scoped to the repo — not Kubernetes CRDs.
 
-Agents declare a `purpose` instead of a prompt. The purpose is natural language describing what the agent does. Yeet infers the KG filtering strategy from it — no manual context configuration needed.
+Agents declare a `purpose` instead of a prompt. The purpose is natural language describing what the agent does. AAC infers the KG filtering strategy from it — no manual context configuration needed.
 
 ```yaml
 apiVersion: agent.tekton.dev/v1alpha1

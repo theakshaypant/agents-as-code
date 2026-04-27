@@ -4,8 +4,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	agentv1alpha1 "github.com/theakshaypant/yeet/pkg/apis/agent/v1alpha1"
-	"github.com/theakshaypant/yeet/pkg/provider"
+	agentv1alpha1 "github.com/theakshaypant/agents-as-code/pkg/apis/agent/v1alpha1"
+	"github.com/theakshaypant/agents-as-code/pkg/provider"
 	"go.uber.org/zap"
 )
 

@@ -1,4 +1,4 @@
-module github.com/theakshaypant/yeet
+module github.com/theakshaypant/agents-as-code
 
 go 1.26.2
 

@@ -2,11 +2,11 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: yeet-webhook
-  namespace: yeet-system
+  name: agents-as-code-webhook
+  namespace: agents-as-code-system
   labels:
     app.kubernetes.io/version: "devel"
-    app.kubernetes.io/part-of: yeet
+    app.kubernetes.io/part-of: agents-as-code
 spec:
   replicas: 1
   selector:
@@ -14,25 +14,25 @@ spec:
       app.kubernetes.io/name: webhook
       app.kubernetes.io/component: webhook
       app.kubernetes.io/instance: default
-      app.kubernetes.io/part-of: yeet
+      app.kubernetes.io/part-of: agents-as-code
   template:
     metadata:
       labels:
-        app: yeet-webhook
+        app: agents-as-code-webhook
         app.kubernetes.io/name: webhook
         app.kubernetes.io/component: webhook
         app.kubernetes.io/instance: default
-        app.kubernetes.io/part-of: yeet
+        app.kubernetes.io/part-of: agents-as-code
         app.kubernetes.io/version: "devel"
     spec:
       securityContext:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
-      serviceAccountName: yeet-webhook
+      serviceAccountName: agents-as-code-webhook
       containers:
         - name: webhook
-          image: "ko://github.com/theakshaypant/yeet/cmd/webhook"
+          image: "ko://github.com/theakshaypant/agents-as-code/cmd/webhook"
           imagePullPolicy: Always
           ports:
             - name: api
