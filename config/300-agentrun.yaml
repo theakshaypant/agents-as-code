@@ -18,10 +18,10 @@ spec:
   scope: Namespaced
   versions:
     - additionalPrinterColumns:
-        - jsonPath: .spec.agentRef
+        - jsonPath: .spec.agent_ref
           name: Agent
           type: string
-        - jsonPath: .spec.repositoryRef
+        - jsonPath: .spec.repository_ref
           name: Repository
           type: string
         - jsonPath: .status.conditions[-1:].type
@@ -54,38 +54,55 @@ spec:
               type: object
             spec:
               properties:
-                agentRef:
+                agent_ref:
                   description: AgentRef is the name of the matched Agent definition.
                   type: string
-                context:
-                  description: |-
-                    Context holds the filtered KG subgraph metadata.
-                    Nil when context filtering is not yet performed.
-                  properties:
-                    depth:
-                      description: Depth is the max hops from seed nodes used during traversal.
-                      type: integer
-                    seedNodes:
-                      description: SeedNodes are the KG nodes used as traversal starting points.
-                      items:
-                        type: string
-                      type: array
-                    strategy:
-                      description: Strategy is the graph traversal strategy used (bfs, dfs, community, impact).
-                      type: string
-                    subgraphRef:
-                      description: SubgraphRef is the path to the filtered KG subgraph file.
-                      type: string
-                    tokenCount:
-                      description: TokenCount is the token count of the filtered subgraph.
-                      type: integer
-                  type: object
                 event:
                   description: Event describes the git event that triggered this run.
                   properties:
+                    action:
+                      description: Action is the event action (e.g. "opened", "synchronize", "created").
+                      type: string
                     branch:
                       description: Branch is the target branch.
                       type: string
+                    changed_files:
+                      description: ChangedFiles lists files affected by this event.
+                      items:
+                        type: string
+                      type: array
+                    comment:
+                      description: Comment contains the comment body for comment events.
+                      properties:
+                        body:
+                          description: Body is the comment text.
+                          type: string
+                      required:
+                        - body
+                      type: object
+                    labels:
+                      description: Labels on the issue/PR at event time.
+                      items:
+                        type: string
+                      type: array
+                    pull_request:
+                      description: PullRequest contains PR-specific details.
+                      properties:
+                        base_branch:
+                          description: BaseBranch is the target branch of the PR.
+                          type: string
+                        head_branch:
+                          description: HeadBranch is the source branch of the PR.
+                          type: string
+                        number:
+                          description: Number is the PR number.
+                          type: integer
+                        title:
+                          description: Title is the PR title.
+                          type: string
+                      required:
+                        - number
+                      type: object
                     sender:
                       description: Sender is the user who triggered the event.
                       type: string
@@ -102,8 +119,32 @@ spec:
                     - sender
                     - type
                   type: object
+                instructions:
+                  description: |-
+                    Instructions are resolved instruction file references.
+                    Repo paths and remote URLs from Agent annotations are resolved at
+                    AgentRun creation time.
+                  items:
+                    properties:
+                      name:
+                        description: Name is a human-readable identifier for this instruction source.
+                        type: string
+                      path:
+                        description: |-
+                          Path is a repo-relative file path.
+                          Mutually exclusive with URL.
+                        type: string
+                      url:
+                        description: |-
+                          URL is a remote HTTP(S) URL.
+                          Mutually exclusive with Path.
+                        type: string
+                    type: object
+                  type: array
                 limits:
-                  description: Limits constrains execution, copied from the Agent definition.
+                  description: |-
+                    Limits are the resolved execution constraints.
+                    Computed as min(Agent.limits, Repository.settings.ai.max*).
                   properties:
                     max_tokens:
                       description: MaxTokens is the maximum tokens per AgentRun.
@@ -117,21 +158,40 @@ spec:
                     - max_tokens
                     - timeout_seconds
                   type: object
-                purpose:
-                  description: |-
-                    Purpose is the agent's purpose, copied from the Agent definition
-                    at creation time so the reconciler can construct the task without
-                    re-fetching agent YAML from the git provider.
-                  type: string
-                repositoryRef:
+                repository_ref:
                   description: RepositoryRef is the name of the Repository CR in the same namespace.
                   type: string
+                system_prompt:
+                  description: |-
+                    SystemPrompt is the agent's core instructions, copied from the Agent
+                    definition at creation time so the reconciler can construct the task
+                    without re-fetching agent YAML from the git provider.
+                  type: string
+                tools:
+                  description: |-
+                    Tools is the resolved tool configuration, copied from the Agent definition.
+                    MCPServer names reference entries in the Repository catalog.
+                  properties:
+                    allowed:
+                      description: |-
+                        Allowed is an allowlist of specific tools.
+                        Format: "server:tool" or "server:*".
+                        If empty, all tools from selected servers are available.
+                      items:
+                        type: string
+                      type: array
+                    mcp_servers:
+                      description: MCPServers references MCP servers by name from the Repository catalog.
+                      items:
+                        type: string
+                      type: array
+                  type: object
               required:
-                - agentRef
+                - agent_ref
                 - event
                 - limits
-                - purpose
-                - repositoryRef
+                - repository_ref
+                - system_prompt
               type: object
             status:
               properties:
@@ -161,7 +221,7 @@ spec:
                     roughly akin to Annotations on any k8s resource, just the reconciler conveying
                     richer information outwards.
                   type: object
-                completionTime:
+                completion_time:
                   description: CompletionTime is when the AgentRun finished.
                   format: date-time
                   type: string
@@ -200,20 +260,26 @@ spec:
                       - type
                     type: object
                   type: array
+                cost_usd:
+                  description: CostUSD is the total cost of the run in USD (e.g. "0.42").
+                  type: string
+                exec_id:
+                  description: ExecID is the execution identifier within the sandbox.
+                  type: string
                 observedGeneration:
                   description: |-
                     ObservedGeneration is the 'Generation' of the Service that
                     was last processed by the controller.
                   format: int64
                   type: integer
-                sandboxName:
+                sandbox_name:
                   description: SandboxName tracks which sandbox instance executed this run.
                   type: string
-                startTime:
+                start_time:
                   description: StartTime is when the AgentRun began executing.
                   format: date-time
                   type: string
-                tokensUsed:
+                tokens_used:
                   description: TokensUsed is the total LLM tokens consumed during execution.
                   type: integer
               type: object
