@@ -322,9 +322,13 @@ spec:
                           default: permissive
                           description: |-
                             Preset is the base network policy.
-                            "restricted": deny all egress except explicitly allowed hosts
-                            "permissive": allow all egress (default)
-                            "air-gapped": no network access
+                            "restricted": deny all egress except the LLM provider endpoint
+                              (resolved from AIConfig) and explicitly allowed hosts.
+                            "permissive": allow all egress (default).
+                            "air-gapped": no network access except the LLM provider endpoint.
+                            The controller always injects an egress rule for the configured
+                            AIConfig.BaseURL (or the provider's default API endpoint) so
+                            the agent can reach the model regardless of preset.
                           enum:
                             - restricted
                             - permissive

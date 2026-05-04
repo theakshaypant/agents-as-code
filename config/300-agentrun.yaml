@@ -105,17 +105,17 @@ spec:
                 limits:
                   description: Limits constrains execution, copied from the Agent definition.
                   properties:
-                    maxTokens:
+                    max_tokens:
                       description: MaxTokens is the maximum tokens per AgentRun.
                       minimum: 1
                       type: integer
-                    timeoutSeconds:
+                    timeout_seconds:
                       description: TimeoutSeconds is the maximum execution time.
                       minimum: 1
                       type: integer
                   required:
-                    - maxTokens
-                    - timeoutSeconds
+                    - max_tokens
+                    - timeout_seconds
                   type: object
                 purpose:
                   description: |-

@@ -18,15 +18,15 @@ spec:
   scope: Namespaced
   versions:
     - additionalPrinterColumns:
-        - jsonPath: .spec.purpose
-          name: Purpose
+        - jsonPath: .spec.system_prompt
+          name: SystemPrompt
           type: string
       name: v1alpha1
       schema:
         openAPIV3Schema:
           description: |-
             Agent is a user-defined agent template describing what the agent does,
-            which git events trigger it, and which LLM provider to use.
+            which git events trigger it, and which tools it uses.
             Agent definitions live in .tekton/agents/ in the repository and are
             discovered by the controller on each git event.
           properties:
@@ -49,51 +49,48 @@ spec:
               type: object
             spec:
               properties:
-                context:
-                  properties:
-                    depth:
-                      description: Depth overrides the max hops from seed nodes.
-                      type: integer
-                    edgeFilter:
-                      description: EdgeFilter limits which relationships to traverse.
-                      items:
-                        type: string
-                      type: array
-                    nodeFilter:
-                      description: NodeFilter limits which node kinds to include.
-                      items:
-                        type: string
-                      type: array
-                    strategy:
-                      description: Strategy overrides the inferred traversal strategy (bfs, dfs, community, impact).
-                      type: string
-                    tokenBudget:
-                      description: TokenBudget caps the context size.
-                      type: integer
-                  type: object
                 limits:
-                  description: Limits constrains agent execution.
+                  description: |-
+                    Limits constrains agent execution.
+                    Bounded by Repository settings — agent can set lower, not higher.
                   properties:
-                    maxTokens:
+                    max_tokens:
                       description: MaxTokens is the maximum tokens per AgentRun.
                       minimum: 1
                       type: integer
-                    timeoutSeconds:
+                    timeout_seconds:
                       description: TimeoutSeconds is the maximum execution time.
                       minimum: 1
                       type: integer
                   required:
-                    - maxTokens
-                    - timeoutSeconds
+                    - max_tokens
+                    - timeout_seconds
                   type: object
-                purpose:
-                  description: |-
-                    Purpose is natural language describing what the agent does.
-                    Drives automatic KG filtering strategy selection.
+                system_prompt:
+                  description: SystemPrompt is the agent's core identity and behavioral instructions.
                   type: string
+                tools:
+                  description: |-
+                    Tools selects which MCP servers (from the Repository catalog) to use
+                    and which specific tools to enable.
+                  properties:
+                    allowed:
+                      description: |-
+                        Allowed is an allowlist of specific tools.
+                        Format: "server:tool" or "server:*".
+                        If empty, all tools from selected servers are available.
+                      items:
+                        type: string
+                      type: array
+                    mcp_servers:
+                      description: MCPServers references MCP servers by name from the Repository catalog.
+                      items:
+                        type: string
+                      type: array
+                  type: object
               required:
                 - limits
-                - purpose
+                - system_prompt
               type: object
           required:
             - metadata
