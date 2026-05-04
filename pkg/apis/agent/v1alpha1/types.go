@@ -47,6 +47,70 @@ type Settings struct {
 	// AI configures the LLM provider used by agents for this repository.
 	// +optional
 	AI *AIConfig `json:"ai,omitempty"`
+
+	// MCPServers declares the MCP servers available to agents in this repo.
+	// Agents reference these by name in their tool configuration.
+	// +optional
+	MCPServers []MCPServerSpec `json:"mcp_servers,omitempty"`
+}
+
+type MCPServerSpec struct {
+	// Name identifies this MCP server. Agents reference this name.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+
+	// Image is a container image for the MCP server (sidecar model).
+	// Mutually exclusive with Command.
+	// +optional
+	Image string `json:"image,omitempty"`
+
+	// Command is the command to launch the MCP server (stdio transport).
+	// Mutually exclusive with Image.
+	// +optional
+	Command []string `json:"command,omitempty"`
+
+	// Args passed to the MCP server.
+	// +optional
+	Args []string `json:"args,omitempty"`
+
+	// Env are environment variables for the MCP server.
+	// +optional
+	Env []EnvVar `json:"env,omitempty"`
+}
+
+type EnvVar struct {
+	// Name of the environment variable.
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+
+	// Value is a literal value.
+	// +optional
+	Value string `json:"value,omitempty"`
+
+	// ValueFrom references a secret or configmap key.
+	// +optional
+	ValueFrom *EnvVarSource `json:"value_from,omitempty"`
+}
+
+type EnvVarSource struct {
+	// SecretKeyRef selects a key from a Secret.
+	// +optional
+	SecretKeyRef *KeyRef `json:"secret_key_ref,omitempty"`
+
+	// ConfigMapKeyRef selects a key from a ConfigMap.
+	// +optional
+	ConfigMapKeyRef *KeyRef `json:"config_map_key_ref,omitempty"`
+}
+
+type KeyRef struct {
+	// Name of the Secret or ConfigMap.
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+
+	// Key within the Secret or ConfigMap.
+	// +kubebuilder:validation:Required
+	Key string `json:"key"`
 }
 
 type AIConfig struct {

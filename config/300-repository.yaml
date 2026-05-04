@@ -223,6 +223,81 @@ spec:
                         - provider
                         - secret_ref
                       type: object
+                    mcp_servers:
+                      description: |-
+                        MCPServers declares the MCP servers available to agents in this repo.
+                        Agents reference these by name in their tool configuration.
+                      items:
+                        properties:
+                          args:
+                            description: Args passed to the MCP server.
+                            items:
+                              type: string
+                            type: array
+                          command:
+                            description: |-
+                              Command is the command to launch the MCP server (stdio transport).
+                              Mutually exclusive with Image.
+                            items:
+                              type: string
+                            type: array
+                          env:
+                            description: Env are environment variables for the MCP server.
+                            items:
+                              properties:
+                                name:
+                                  description: Name of the environment variable.
+                                  type: string
+                                value:
+                                  description: Value is a literal value.
+                                  type: string
+                                value_from:
+                                  description: ValueFrom references a secret or configmap key.
+                                  properties:
+                                    config_map_key_ref:
+                                      description: ConfigMapKeyRef selects a key from a ConfigMap.
+                                      properties:
+                                        key:
+                                          description: Key within the Secret or ConfigMap.
+                                          type: string
+                                        name:
+                                          description: Name of the Secret or ConfigMap.
+                                          type: string
+                                      required:
+                                        - key
+                                        - name
+                                      type: object
+                                    secret_key_ref:
+                                      description: SecretKeyRef selects a key from a Secret.
+                                      properties:
+                                        key:
+                                          description: Key within the Secret or ConfigMap.
+                                          type: string
+                                        name:
+                                          description: Name of the Secret or ConfigMap.
+                                          type: string
+                                      required:
+                                        - key
+                                        - name
+                                      type: object
+                                  type: object
+                              required:
+                                - name
+                              type: object
+                            type: array
+                          image:
+                            description: |-
+                              Image is a container image for the MCP server (sidecar model).
+                              Mutually exclusive with Command.
+                            type: string
+                          name:
+                            description: Name identifies this MCP server. Agents reference this name.
+                            minLength: 1
+                            type: string
+                        required:
+                          - name
+                        type: object
+                      type: array
                   type: object
                 url:
                   description: URL of the Git repository.
