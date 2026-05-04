@@ -145,32 +145,29 @@ apiVersion: agent.tekton.dev/v1alpha1
 kind: Agent
 metadata:
   name: triage
+  annotations:
+    agent.tekton.dev/on-event: "[pull_request, issue_comment]"
+    agent.tekton.dev/on-target-branch: "[main, release-*]"
+    agent.tekton.dev/on-comment: "/triage"
 spec:
-  purpose: >
+  system_prompt: |
     Triage incoming pull requests and issues. Label PRs by area
     (bug, feature, docs, tests), assess complexity, identify reviewers
     based on changed files, and post a summary comment.
-  triggers:
-    - event: pull_request
-      branches:
-        - main
-        - "release-*"
-    - event: issue_comment
-      match: "/triage"
   limits:
-    maxTokens: 8000
-    timeoutSeconds: 120
+    max_tokens: 8000
+    timeout_seconds: 120
 ```
 
 This agent triggers on:
 - **Pull requests** targeting `main` or `release-*` branches
-- **Issue comments** containing `/triage`
+- **Issue comments** matching `/triage`
 
 You can add more agents in separate files. Each `.yaml` or `.yml` file in `.tekton/agents/` is discovered independently.
 
 ### More Examples
 
-A review agent that runs on PR review events:
+A review agent that runs on PRs and comment commands, with MCP tools and instruction files:
 
 ```yaml
 # .tekton/agents/reviewer.yaml
@@ -178,19 +175,24 @@ apiVersion: agent.tekton.dev/v1alpha1
 kind: Agent
 metadata:
   name: reviewer
+  annotations:
+    agent.tekton.dev/on-event: "[pull_request, issue_comment]"
+    agent.tekton.dev/on-target-branch: "main"
+    agent.tekton.dev/on-comment: "/review"
+    agent.tekton.dev/instruction: ".tekton/agents/review-standards.md"
 spec:
-  purpose: >
+  system_prompt: |
     Review pull request code changes for bugs, security issues,
     and adherence to project conventions.
-  triggers:
-    - event: pull_request
-      branches:
-        - main
-    - event: issue_comment
-      match: "/review"
+  tools:
+    mcp_servers:
+      - github
+    allowed:
+      - "github:get_file_contents"
+      - "github:create_pull_request_review"
   limits:
-    maxTokens: 16000
-    timeoutSeconds: 300
+    max_tokens: 16000
+    timeout_seconds: 300
 ```
 
 A labeling agent that reacts to a specific issue label:
@@ -201,16 +203,16 @@ apiVersion: agent.tekton.dev/v1alpha1
 kind: Agent
 metadata:
   name: labeler
+  annotations:
+    agent.tekton.dev/on-event: "issues_labeled"
+    agent.tekton.dev/on-label: "needs-investigation"
 spec:
-  purpose: >
+  system_prompt: |
     When an issue is labeled 'needs-investigation', analyze the issue
     description, find related code, and post an initial investigation comment.
-  triggers:
-    - event: issues_labeled
-      match: needs-investigation
   limits:
-    maxTokens: 8000
-    timeoutSeconds: 120
+    max_tokens: 8000
+    timeout_seconds: 120
 ```
 
 An agent that triggers when a PR is labeled for auto-merge:
@@ -221,16 +223,16 @@ apiVersion: agent.tekton.dev/v1alpha1
 kind: Agent
 metadata:
   name: auto-merge
+  annotations:
+    agent.tekton.dev/on-event: "pull_request_labeled"
+    agent.tekton.dev/on-label: "ready-to-merge"
 spec:
-  purpose: >
+  system_prompt: |
     When a PR is labeled 'ready-to-merge', verify all checks passed,
     confirm approvals, and post a merge-readiness summary.
-  triggers:
-    - event: pull_request_labeled
-      match: ready-to-merge
   limits:
-    maxTokens: 4000
-    timeoutSeconds: 60
+    max_tokens: 4000
+    timeout_seconds: 60
 ```
 
 ## 8. Test It
@@ -246,7 +248,7 @@ You should see the event being received, parsed, the Repository CR matched, and 
 ```
 processing event  trigger=pull_request org=your-org repo=your-repo sha=abc123 sender=you
 discovered agent definitions  count=1
-agent matched  agent=triage purpose="Triage incoming pull requests..."  trigger_event=pull_request
+agent matched  agent=triage system_prompt="Triage incoming pull requests..."
 ```
 
 ## 9. Replaying Events
@@ -283,10 +285,18 @@ make kind-delete
 
 Run `make help` to see all available targets.
 
-## Trigger Fields Reference
+## Trigger Annotations Reference
 
-| Field | Description | Example |
-|-------|-------------|---------|
-| `event` | Required. One of: `push`, `pull_request`, `pull_request_review`, `issue_comment`, `issues_labeled`, `pull_request_labeled`. | `pull_request` |
-| `branches` | Optional. Glob patterns for target branch filtering. | `["main", "release-*"]` |
-| `match` | Optional. For `issue_comment`: matches if the comment body contains this string. For `issues_labeled` / `pull_request_labeled`: matches if the label name equals this string exactly. | `"/triage"`, `"bug"` |
+Triggers are declared as annotations on Agent metadata using the `agent.tekton.dev/` prefix.
+
+| Annotation | Description | Default (absent) |
+|------------|-------------|------------------|
+| `on-event` | Required. Event types to match. | — |
+| `on-target-branch` | Glob patterns for target branch filtering. | Match all |
+| `on-comment` | Regex match on comment body. | Pass |
+| `on-path-change` | Glob match on changed files. | Pass |
+| `on-label` | Label match for `issues_labeled` / `pull_request_labeled` events. | Pass |
+
+**Value format:** single value (`"push"`) or bracket array (`"[push, pull_request]"`).
+
+**Supported events:** `push`, `pull_request`, `pull_request_review`, `issue_comment`, `issues_labeled`, `pull_request_labeled`

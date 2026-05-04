@@ -2,7 +2,7 @@
 
 > **Experimental / Proof of Concept** — this project is a design exploration and not intended for production use.
 
-Run AI agents on git events with repo-aware context.
+Run AI agents on git events with declarative tool access and repo-aware context.
 
 ## Why
 
@@ -29,8 +29,8 @@ AAC is designed to integrate with PaC, reusing its adapter, provider, and Reposi
 ## How It Works
 
 1. Define agents as YAML files in `.tekton/agents/` in your repository
-2. Configure a Repository CR pointing at your repo
-3. When a git event matches an agent's triggers, AAC spawns a sandboxed execution with filtered knowledge graph context
+2. Configure a Repository CR pointing at your repo with LLM settings and MCP server catalog
+3. When a git event matches an agent's triggers, AAC creates an AgentRun with resolved instructions, tools, and enriched event context
 
 ```yaml
 # .tekton/agents/triage.yaml
@@ -43,15 +43,18 @@ metadata:
     agent.tekton.dev/on-target-branch: "main"
     agent.tekton.dev/on-comment: "/triage"
 spec:
-  purpose: >
+  system_prompt: |
     Triage incoming pull requests. Label by area,
     assess complexity, and identify reviewers.
+  tools:
+    mcp_servers:
+      - github
   limits:
-    maxTokens: 8000
-    timeoutSeconds: 120
+    max_tokens: 8000
+    timeout_seconds: 120
 ```
 
-Agents describe their purpose in natural language. AAC infers the right knowledge graph filtering strategy — no manual context configuration needed.
+Agents define their behavior via `system_prompt` and select tools from the Repository's MCP server catalog. The infra team controls what's available (LLM settings, MCP servers, network policy, budget caps); developers control what each agent does.
 
 ## Trigger Annotations
 

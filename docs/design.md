@@ -4,9 +4,9 @@
 
 **Knowledge Graph (KG)** — a persistent, incrementally-updated graph of a repository's code structure and relationships, stored on a PV. Built using graphify (tree-sitter for AST extraction, LLM for semantic extraction, Leiden/Louvain for community detection). Configured as a field on the Repository CR, updated incrementally on each push.
 
-**Agent** — a user-defined YAML template in `.tekton/agents/` describing what the agent does and which git events trigger it. The `purpose` field is natural language — AAC infers the right KG filtering strategy from it. No prompts, no context flags — just declare intent.
+**Agent** — a user-defined YAML template in `.tekton/agents/` describing what the agent does, which git events trigger it, and which tools it uses. The `system_prompt` field is the agent's core identity and behavioral instructions. Agents select MCP servers from the Repository's catalog and can scope their tool access with an allowlist.
 
-**AgentRun** — an execution instance spawned per git event, receiving a filtered KG subgraph. The execution record, analogous to PipelineRun. Tracks what the agent did (comments posted, commits pushed, PRs created) for audit.
+**AgentRun** — an execution instance spawned per git event. Contains a resolved snapshot of the Agent definition (system prompt, instructions, tools) plus enriched event context (PR details, comment body, labels, changed files). Tracks what the agent did (comments posted, commits pushed, PRs created) for audit.
 
 All triggers are git events. Agents interact with the outside world exclusively through git primitives (PR comments, commits, status checks, labels), which re-enter AAC as new events — enabling agent chaining without special inter-agent protocols.
 
@@ -31,10 +31,7 @@ Repository CR lookup (match webhook repo URL to CR)
     +---> Agent Controller (match event to .tekton/agents/*.yaml definitions)
               |
               v
-          Context Filter (seed extraction -> strategy -> traversal -> truncation)
-              |
-              v
-          AgentRun creation (sandbox with filtered KG + git creds)
+          AgentRun creation (sandbox with resolved instructions + tools + event context)
               |
               v
           Agent executes (LLM calls, produces git actions)
@@ -49,7 +46,7 @@ Two independent controllers, both triggered by git events:
 
 1. **KG Controller** — watches Repository CRs with `knowledge_graph.enabled: true`. On push events to tracked branches, runs graphify incrementally. Manages PV lifecycle.
 
-2. **Agent Controller** — on any matching git event, reads `.tekton/agents/*.yaml` from the repo, matches against event type, filters KG context, creates AgentRun CR, spawns execution.
+2. **Agent Controller** — on any matching git event, reads `.tekton/agents/*.yaml` from the repo, matches against event type, creates AgentRun CR, spawns execution.
 
 Both controllers share the webhook handler but have separate control loops.
 
@@ -57,7 +54,7 @@ Both controllers share the webhook handler but have separate control loops.
 
 ### Repository CR
 
-The Repository CR is the anchor. It owns the KG configuration, provider credentials, and LLM settings. This follows PaC's pattern where the Repository CR holds provider-level configuration while the logic lives in git.
+The Repository CR is the anchor. It owns the KG configuration, provider credentials, LLM settings, MCP server catalog, and network policy. This follows PaC's pattern where the Repository CR holds provider-level configuration while the logic lives in git.
 
 ```yaml
 apiVersion: agent.tekton.dev/v1alpha1
@@ -78,10 +75,47 @@ spec:
   settings:
     ai:
       enabled: true
-      provider: gemini
+      provider: anthropic
       secret_ref:
         name: ai-api-key
         key: api-key
+      model: claude-sonnet-4-20250514
+      max_cost_per_run: "1.00"
+      max_tokens_per_run: 200000
+      max_timeout_seconds: 600
+      model_config:
+        temperature: "0.2"
+        max_output_tokens: 8192
+        max_context_tokens: 128000
+        thinking:
+          enabled: true
+          budget_tokens: 10000
+
+    mcp_servers:
+      - name: github
+        image: ghcr.io/modelcontextprotocol/github:latest
+        env:
+          - name: GITHUB_TOKEN
+            value_from:
+              secret_key_ref:
+                name: github-token
+                key: token
+      - name: linear
+        command: ["npx", "-y", "@anthropic-ai/linear-mcp-server"]
+        env:
+          - name: LINEAR_API_KEY
+            value_from:
+              secret_key_ref:
+                name: linear-token
+                key: api-key
+
+    network:
+      preset: restricted
+      egress:
+        - host: "api.github.com"
+          ports: [443]
+        - host: "api.anthropic.com"
+          ports: [443]
 
   knowledge_graph:
     enabled: true
@@ -120,16 +154,19 @@ status:
         communityCount: 15
 ```
 
-- Each branch entry has its own `scope` — different branches can graph different directories
-- If `scope` is omitted, graphify runs on the entire repo with its built-in skip list
-- Each branch gets its own PV; `storageClassName` is shared at top level
-- LLM provider configuration lives on the Repository CR, not on individual agents — keeps agent definitions simple and avoids secret sprawl
+**Settings** configure policy and infrastructure that applies to all agents in this repo:
+
+- **AI** — LLM provider, model, API keys, budget caps (`max_cost_per_run`, `max_tokens_per_run`, `max_timeout_seconds`), and model tuning (`model_config` with temperature, thinking, context window limits)
+- **MCP Servers** — catalog of MCP servers agents can reference by name (container images or stdio commands, with env vars sourced from Secrets/ConfigMaps)
+- **Network** — egress policy for agent sandboxes (`restricted`, `permissive`, or `air-gapped` preset with explicit egress allowlist)
+
+Each branch entry has its own `scope` — different branches can graph different directories. If `scope` is omitted, graphify runs on the entire repo with its built-in skip list. Each branch gets its own PV; `storageClassName` is shared at top level.
 
 ### Agent Definitions (`.tekton/agents/`)
 
 Agent definitions live in the repository under `.tekton/agents/`. They are version-controlled, reviewable in PRs, and scoped to the repo — not Kubernetes CRDs.
 
-Agents declare a `purpose` instead of a prompt. The purpose is natural language describing what the agent does. AAC infers the KG filtering strategy from it — no manual context configuration needed.
+Agents declare a `system_prompt` — the agent's core identity and behavioral instructions describing what the agent does. Agents select tools from the Repository's MCP server catalog and can scope access with an allowlist. Instructions (additional context files) are referenced via annotations pointing to repo-relative paths or remote URLs.
 
 ```yaml
 apiVersion: agent.tekton.dev/v1alpha1
@@ -140,10 +177,16 @@ metadata:
     agent.tekton.dev/on-event: "issue_comment"
     agent.tekton.dev/on-comment: "/assign|/implement"
 spec:
-  purpose: "Implement code changes for assigned issues"
+  system_prompt: "Implement code changes for assigned issues"
+  tools:
+    mcp_servers:
+      - github
+    allowed:
+      - "github:get_file_contents"
+      - "github:create_or_update_file"
   limits:
-    maxTokens: 100000
-    timeoutSeconds: 600
+    max_tokens: 100000
+    timeout_seconds: 600
 ```
 
 ```yaml
@@ -155,11 +198,20 @@ metadata:
     agent.tekton.dev/on-event: "[pull_request, issue_comment]"
     agent.tekton.dev/on-target-branch: "main"
     agent.tekton.dev/on-comment: "/review"
+    agent.tekton.dev/instruction: ".tekton/agents/review-standards.md"
 spec:
-  purpose: "Review pull requests for bugs, security issues, and style"
+  system_prompt: |
+    Review pull requests for bugs, security issues, and style.
+    Provide actionable feedback as a PR review.
+  tools:
+    mcp_servers:
+      - github
+    allowed:
+      - "github:get_file_contents"
+      - "github:create_pull_request_review"
   limits:
-    maxTokens: 50000
-    timeoutSeconds: 300
+    max_tokens: 50000
+    timeout_seconds: 300
 ```
 
 **Trigger annotations:**
@@ -178,26 +230,18 @@ Triggers are declared as annotations on Agent metadata using the `agent.tekton.d
 
 **Matching semantics:** `on-comment` is a separate matching track (checked first, bypasses other annotations when matched). For the standard path, all present annotations are AND'd — all must match. Within each annotation, array values are OR'd.
 
-**Optional context override** — for users who want explicit control over KG filtering instead of relying on purpose-based inference:
+**Instruction annotations:**
 
-```yaml
-spec:
-  purpose: "Review pull requests for security vulnerabilities"
-  context:
-    strategy: dfs              # bfs | dfs | community | impact
-    depth: 4                   # max hops from seed nodes
-    tokenBudget: 8000          # cap on context size
-    nodeFilter:
-      - function
-      - interface
-      - type
-    edgeFilter:
-      - calls
-      - implements
-      - depends_on
-```
+Instructions are loaded via PAC-style annotations. Developers explicitly opt-in to whatever instruction files they want — no auto-discovery of well-known files.
 
-Partial overrides work — specifying only `depth: 4` keeps the inferred strategy but increases traversal depth.
+| Annotation | Description |
+|------------|-------------|
+| `instruction` | Primary instruction file (repo-relative path or HTTP(S) URL) |
+| `instruction-1`, `instruction-2`, ... | Additional instruction files |
+
+Supported sources:
+- Repo-relative paths (resolved from the repo's default branch)
+- Remote HTTP(S) URLs (fetched at AgentRun creation time)
 
 ### AgentRun CR
 
@@ -216,29 +260,51 @@ metadata:
     agent.tekton.dev/on-event: "issue_comment"
     agent.tekton.dev/on-comment: "/assign|/implement"
 spec:
-  agentRef: coding-agent
+  agent_ref: coding-agent
+  repository_ref: my-repo
+  system_prompt: "Implement code changes for assigned issues"
+  instructions:
+    - name: CLAUDE.md
+      path: CLAUDE.md
+  tools:
+    mcp_servers:
+      - github
+    allowed:
+      - "github:get_file_contents"
+      - "github:create_or_update_file"
   event:
     type: issue_comment
+    action: created
     sha: abc123f
     branch: main
     sender: octocat
     url: https://github.com/org/repo/issues/42#issuecomment-123
-  context:
-    subgraphRef: /data/kg/agentrun-f7a3b-context.json
-    tokenCount: 3200
-    seedNodes:
-      - "pkg/provider/gitlab/status.go"
-      - "CreateStatus"
-    strategy: bfs
-    depth: 2
+    comment:
+      body: "/assign implement the new API endpoint"
+    pull_request:
+      number: 42
+      title: "Add user API endpoint"
+      head_branch: feature/user-api
+      base_branch: main
+    labels:
+      - enhancement
+    changed_files:
+      - pkg/api/user.go
+      - pkg/api/user_test.go
+  limits:
+    max_tokens: 100000
+    timeout_seconds: 600
 
 status:
   conditions:
     - type: Succeeded
       status: "True"
-  startTime: "2026-04-23T10:31:00Z"
-  completionTime: "2026-04-23T10:33:45Z"
-  tokensUsed: 28400
+  start_time: "2026-04-23T10:31:00Z"
+  completion_time: "2026-04-23T10:33:45Z"
+  tokens_used: 28400
+  cost_usd: "0.42"
+  sandbox_name: coding-agent-run-f7a3b-sandbox
+  exec_id: exec-abc123
   actions:
     - type: pr-comment
       url: https://github.com/org/repo/pull/43#issuecomment-456
@@ -246,14 +312,61 @@ status:
       sha: def456a
 ```
 
-- `context.subgraphRef` points to the filtered KG subgraph
+- `system_prompt` is the agent's instructions, copied from the Agent definition
+- `instructions` references resolved instruction files (repo paths or remote URLs)
+- `tools` is the resolved MCP server selection and tool allowlist
+- `event` contains enriched event context (PR details, comment body, labels, changed files)
+- `limits` are resolved as `min(agent.limits, repo.settings.ai.max*)`
 - `status.actions` tracks what the agent did for audit
+- `status.cost_usd` tracks the cost of the run
 - Immutable after completion
-- Lifecycle: `Created -> Pending (waiting for KG filter) -> Running -> Succeeded | Failed`
+- Lifecycle: `Created -> Pending -> Running -> Succeeded | Failed`
 
-## Context Filtering
+## Trust Model
 
-Given a KG with thousands of nodes and a specific git event, produce a small, relevant subgraph that gives the agent what it needs without overwhelming its context window.
+The API has a clear separation of concerns:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Repository CR (infra team)                             │
+│                                                         │
+│  - AI provider, model, API keys, model config           │
+│  - Budget caps (max_cost_per_run, max_tokens_per_run)   │
+│  - MCP server catalog (images, credentials)             │
+│  - Network policy (preset + egress rules)               │
+│                                                         │
+│  "What agents are ALLOWED to do"                        │
+└──────────────────────┬──────────────────────────────────┘
+                       │ controller reads policy at reconcile time
+                       │
+┌──────────────────────▼──────────────────────────────────┐
+│  Agent Definition (developer, in-repo YAML)             │
+│                                                         │
+│  - System prompt                                        │
+│  - Instructions (repo files + remote URLs, explicit)    │
+│  - Tool selection (from repo catalog) + allowlist       │
+│  - Limits (bounded by repo maximums)                    │
+│  - Trigger annotations (events, branches, patterns)     │
+│                                                         │
+│  "What the agent SHOULD do"                             │
+└──────────────────────┬──────────────────────────────────┘
+                       │ adapter snapshots into AgentRun
+                       │
+┌──────────────────────▼──────────────────────────────────┐
+│  AgentRun CR (runtime)                                  │
+│                                                         │
+│  - Resolved snapshot of Agent config                    │
+│  - Event context (enriched with PR/comment/files)       │
+│  - Resolved limits (min of agent + repo caps)           │
+│  - NO policy fields — controller reads from Repo CR     │
+│                                                         │
+│  "What actually happened"                               │
+└─────────────────────────────────────────────────────────┘
+```
+
+## Context Filtering (deferred)
+
+KG-based context filtering is designed but not yet implemented. When implemented, given a KG with thousands of nodes and a specific git event, it will produce a small, relevant subgraph that gives the agent what it needs without overwhelming its context window.
 
 ### Pipeline
 
@@ -266,7 +379,7 @@ Seed Extraction (event-type-specific)
     |  - issue/comment: text -> keyword match against KG node labels
     |
     v
-Strategy Selection (inferred from Agent purpose + event type)
+Strategy Selection (inferred from Agent system_prompt + event type)
     |
     v
 Graph Traversal (from seed nodes using selected strategy)
@@ -277,7 +390,7 @@ Graph Traversal (from seed nodes using selected strategy)
     v
 Token Budget Truncation
     |  - Rank nodes by relevance (distance from seed, edge confidence, node degree)
-    |  - Truncate to fit within Agent's maxTokens budget
+    |  - Truncate to fit within Agent's max_tokens budget
     |
     v
 Filtered Subgraph -> provided to AgentRun
@@ -285,16 +398,16 @@ Filtered Subgraph -> provided to AgentRun
 
 ### Preset Profiles
 
-The Agent's `purpose` field is mapped to a filtering profile. Users don't configure these directly.
+The Agent's `system_prompt` will be mapped to a filtering profile. Users won't configure these directly.
 
-| Profile | Purpose keywords | Event types | Strategy | Depth | Focus |
+| Profile | Keywords | Event types | Strategy | Depth | Focus |
 |---|---|---|---|---|---|
 | `implement` | implement, code, build, create | issue, issue_comment | keyword -> community -> code nodes | 3 | broad understanding, relevant packages |
 | `review` | review, check, audit, verify | pull_request | changed files -> DFS outward | 3 | what could break, interface contracts |
 | `triage` | triage, categorize, prioritize | issues | keyword -> package-level summary | 1 | architecture, ownership, not code details |
 | `fix` | fix, debug, bug, error | issue (with bug label), issue_comment | stack trace / error -> callers/callees | 2 | narrow, deep, focused on the broken path |
 
-Default to `implement` (broadest context) if purpose doesn't clearly match a profile.
+Default to `implement` (broadest context) if system_prompt doesn't clearly match a profile.
 
 ## Knowledge Graph Lifecycle
 
@@ -344,9 +457,10 @@ On push events to tracked branches:
 
 Each AgentRun executes in an isolated environment with:
 
-- Filtered KG subgraph (read-only)
+- Resolved system prompt and instruction files
+- MCP servers from the Repository catalog (configured tools only)
 - Git credentials for the target repo (from Repository CR's secret)
-- Network access to LLM provider API
+- Network access governed by the Repository's network policy
 - No access to the Kubernetes API server
 
 The concrete execution backend (pods, external runners, etc.) is TBD.
@@ -376,13 +490,15 @@ All results are git actions, so visibility is governed by existing VCS permissio
 2. **KG config lives on Repository CR** — not a separate CRD
 3. **Agent definitions live in `.tekton/agents/`** — version-controlled in the repo, not K8s CRDs
 4. **AgentRun is a CRD** — the execution record, created by the controller
-5. **`purpose` drives filtering** — users describe intent in natural language, system infers strategy
-6. **Per-branch KG with per-branch PV** — different branches can have different scopes and storage
-7. **RBAC inherited from Repository CR** — no separate agent-specific RBAC
-8. **Agent results are git actions only** — comments, commits, PRs, status checks, labels
-9. **Graphify as the KG engine** — accept current limitations, iterate later
-10. **LLM config on Repository CR, not on agents** — avoids secret sprawl, agents stay declarative
-11. **Annotation-based triggers** — trigger matching uses `metadata.annotations` with PaC-style semantics, not structured spec fields
+5. **`system_prompt` is the agent's identity** — natural language describing what the agent does
+6. **Declarative tool selection** — MCP servers declared on Repository CR (infra), agents select by name (dev)
+7. **Per-branch KG with per-branch PV** — different branches can have different scopes and storage
+8. **RBAC inherited from Repository CR** — no separate agent-specific RBAC
+9. **Agent results are git actions only** — comments, commits, PRs, status checks, labels
+10. **Graphify as the KG engine** — accept current limitations, iterate later
+11. **LLM config on Repository CR, not on agents** — avoids secret sprawl, agents stay declarative
+12. **Annotation-based triggers** — trigger matching uses `metadata.annotations` with PaC-style semantics, not structured spec fields
+13. **Explicit instructions** — no auto-discovery of well-known files; developers opt-in via instruction annotations
 
 ## Open Questions
 
@@ -390,7 +506,7 @@ All results are git actions, so visibility is governed by existing VCS permissio
 Graphify uses tree-sitter for AST extraction, which gives broad language support but is less accurate than language-specific tooling. Known weaknesses on Go repos: node deduplication issues, fragmented communities, low cohesion scores. The context filtering pipeline must be resilient to noisy graphs.
 
 ### Cost Control
-LLM API calls cost money. Need to surface cost tracking per Agent, per AgentRun, per Repository. Consider namespace-level or cluster-level budget caps.
+LLM API calls cost money. `max_cost_per_run` on the Repository CR defines a budget cap, but enforcement requires integration with LLM provider billing/usage APIs to track spend mid-run and terminate when exceeded.
 
 ### Observability
 Where do AgentRun logs go? What metrics to track (duration, token usage, success rate, KG query latency)? OpenTelemetry integration for the agent path?
@@ -400,3 +516,6 @@ Agent-to-agent chaining (e.g., reviewer agent posts a comment that triggers a co
 
 ### Execution Backend
 The concrete runtime for AgentRuns — pods, external runners, or something else — needs to be determined. Considerations include isolation guarantees, startup latency, resource efficiency, and whether agents need filesystem access to the repo clone.
+
+### Security Policy
+Deferred for MVP. See [Deferred Decisions](deferred-decisions.md) for the full analysis of why git security policy needs more design work (MCP-mediated vs controller-mediated git operations).
