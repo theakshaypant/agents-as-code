@@ -258,7 +258,7 @@ func (a *Adapter) processEvent(ctx context.Context, evt *provider.Event, prov pr
 	for _, m := range matches {
 		logger.Infow("agent matched",
 			"agent", m.Agent.Name,
-			"purpose", m.Agent.Spec.Purpose,
+			"system_prompt", m.Agent.Spec.SystemPrompt,
 		)
 		// TODO: create AgentRun CR for each matched agent
 		// Copy trigger annotations: matcher.TriggerAnnotations(m.Agent.GetAnnotations())

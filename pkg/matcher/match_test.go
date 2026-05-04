@@ -22,8 +22,8 @@ func makeAgent(name string, annots map[string]string) agentv1alpha1.Agent {
 			Annotations: annots,
 		},
 		Spec: agentv1alpha1.AgentSpec{
-			Purpose: "test",
-			Limits:  agentv1alpha1.AgentLimits{MaxTokens: 1000, TimeoutSeconds: 30},
+			SystemPrompt: "test",
+			Limits:       agentv1alpha1.AgentLimits{MaxTokens: 1000, TimeoutSeconds: 30},
 		},
 	}
 }

@@ -61,8 +61,8 @@ func validateAgent(a *agentv1alpha1.Agent) error {
 	if a.Name == "" {
 		return fmt.Errorf("metadata.name is required")
 	}
-	if a.Spec.Purpose == "" {
-		return fmt.Errorf("spec.purpose is required")
+	if a.Spec.SystemPrompt == "" {
+		return fmt.Errorf("spec.system_prompt is required")
 	}
 
 	annots := a.GetAnnotations()
@@ -96,10 +96,10 @@ func validateAgent(a *agentv1alpha1.Agent) error {
 	}
 
 	if a.Spec.Limits.MaxTokens <= 0 {
-		return fmt.Errorf("spec.limits.maxTokens must be positive")
+		return fmt.Errorf("spec.limits.max_tokens must be positive")
 	}
 	if a.Spec.Limits.TimeoutSeconds <= 0 {
-		return fmt.Errorf("spec.limits.timeoutSeconds must be positive")
+		return fmt.Errorf("spec.limits.timeout_seconds must be positive")
 	}
 	return nil
 }

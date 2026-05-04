@@ -15,10 +15,10 @@ metadata:
     agent.tekton.dev/on-event: "[push, pull_request]"
     agent.tekton.dev/on-target-branch: "main"
 spec:
-  purpose: Test agent
+  system_prompt: Test agent
   limits:
-    maxTokens: 1000
-    timeoutSeconds: 30
+    max_tokens: 1000
+    timeout_seconds: 30
 `
 	agents, err := ParseAgentDefinitions(yaml)
 	if err != nil {
@@ -43,10 +43,10 @@ kind: Agent
 metadata:
   name: bad-agent
 spec:
-  purpose: Missing on-event
+  system_prompt: Missing on-event
   limits:
-    maxTokens: 1000
-    timeoutSeconds: 30
+    max_tokens: 1000
+    timeout_seconds: 30
 `
 	_, err := ParseAgentDefinitions(yaml)
 	if err == nil {
@@ -66,10 +66,10 @@ metadata:
   annotations:
     agent.tekton.dev/on-event: "bogus_event"
 spec:
-  purpose: Invalid event type
+  system_prompt: Invalid event type
   limits:
-    maxTokens: 1000
-    timeoutSeconds: 30
+    max_tokens: 1000
+    timeout_seconds: 30
 `
 	_, err := ParseAgentDefinitions(yaml)
 	if err == nil {
@@ -90,10 +90,10 @@ metadata:
     agent.tekton.dev/on-event: "issue_comment"
     agent.tekton.dev/on-comment: "[invalid"
 spec:
-  purpose: Invalid regex
+  system_prompt: Invalid regex
   limits:
-    maxTokens: 1000
-    timeoutSeconds: 30
+    max_tokens: 1000
+    timeout_seconds: 30
 `
 	_, err := ParseAgentDefinitions(yaml)
 	if err == nil {
@@ -113,10 +113,10 @@ metadata:
   annotations:
     agent.tekton.dev/on-event: "push"
 spec:
-  purpose: Agent A
+  system_prompt: Agent A
   limits:
-    maxTokens: 1000
-    timeoutSeconds: 30
+    max_tokens: 1000
+    timeout_seconds: 30
 ---
 apiVersion: agent.tekton.dev/v1alpha1
 kind: Agent
@@ -125,10 +125,10 @@ metadata:
   annotations:
     agent.tekton.dev/on-event: "pull_request"
 spec:
-  purpose: Agent B
+  system_prompt: Agent B
   limits:
-    maxTokens: 2000
-    timeoutSeconds: 60
+    max_tokens: 2000
+    timeout_seconds: 60
 `
 	agents, err := ParseAgentDefinitions(yaml)
 	if err != nil {
