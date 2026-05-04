@@ -298,6 +298,41 @@ spec:
                           - name
                         type: object
                       type: array
+                    network:
+                      description: Network configures network policy for agent sandboxes.
+                      properties:
+                        egress:
+                          description: Egress allows specific outbound connections (used with "restricted").
+                          items:
+                            properties:
+                              cidr:
+                                description: CIDR is an IP range to allow (e.g. "10.0.0.0/8").
+                                type: string
+                              host:
+                                description: Host is a DNS hostname to allow (e.g. "api.github.com").
+                                type: string
+                              ports:
+                                description: Ports are the allowed destination ports.
+                                items:
+                                  type: integer
+                                type: array
+                            type: object
+                          type: array
+                        preset:
+                          default: permissive
+                          description: |-
+                            Preset is the base network policy.
+                            "restricted": deny all egress except explicitly allowed hosts
+                            "permissive": allow all egress (default)
+                            "air-gapped": no network access
+                          enum:
+                            - restricted
+                            - permissive
+                            - air-gapped
+                          type: string
+                      required:
+                        - preset
+                      type: object
                   type: object
                 url:
                   description: URL of the Git repository.

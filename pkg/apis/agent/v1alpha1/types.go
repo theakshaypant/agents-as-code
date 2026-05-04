@@ -52,6 +52,10 @@ type Settings struct {
 	// Agents reference these by name in their tool configuration.
 	// +optional
 	MCPServers []MCPServerSpec `json:"mcp_servers,omitempty"`
+
+	// Network configures network policy for agent sandboxes.
+	// +optional
+	Network *NetworkPolicy `json:"network,omitempty"`
 }
 
 type MCPServerSpec struct {
@@ -111,6 +115,38 @@ type KeyRef struct {
 	// Key within the Secret or ConfigMap.
 	// +kubebuilder:validation:Required
 	Key string `json:"key"`
+}
+
+type NetworkPolicy struct {
+	// Preset is the base network policy.
+	// "restricted": deny all egress except the LLM provider endpoint
+	//   (resolved from AIConfig) and explicitly allowed hosts.
+	// "permissive": allow all egress (default).
+	// "air-gapped": no network access except the LLM provider endpoint.
+	// The controller always injects an egress rule for the configured
+	// AIConfig.BaseURL (or the provider's default API endpoint) so
+	// the agent can reach the model regardless of preset.
+	// +kubebuilder:validation:Enum=restricted;permissive;air-gapped
+	// +kubebuilder:default=permissive
+	Preset string `json:"preset"`
+
+	// Egress allows specific outbound connections (used with "restricted").
+	// +optional
+	Egress []EgressRule `json:"egress,omitempty"`
+}
+
+type EgressRule struct {
+	// Host is a DNS hostname to allow (e.g. "api.github.com").
+	// +optional
+	Host string `json:"host,omitempty"`
+
+	// CIDR is an IP range to allow (e.g. "10.0.0.0/8").
+	// +optional
+	CIDR string `json:"cidr,omitempty"`
+
+	// Ports are the allowed destination ports.
+	// +optional
+	Ports []int `json:"ports,omitempty"`
 }
 
 type AIConfig struct {
