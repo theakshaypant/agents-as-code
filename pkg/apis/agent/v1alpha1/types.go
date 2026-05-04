@@ -54,13 +54,82 @@ type AIConfig struct {
 	// +kubebuilder:validation:Required
 	Enabled bool `json:"enabled"`
 
-	// Provider is the LLM provider name (e.g. openai, anthropic).
+	// Provider is the LLM provider name (e.g. openai, anthropic, gemini).
 	// +kubebuilder:validation:Required
 	Provider string `json:"provider"`
 
 	// SecretRef references the Kubernetes Secret containing the LLM API key.
 	// +kubebuilder:validation:Required
 	SecretRef Secret `json:"secret_ref"`
+
+	// Model overrides the default LLM model for this provider.
+	// +optional
+	Model string `json:"model,omitempty"`
+
+	// BaseURL overrides the LLM API endpoint for custom or self-hosted providers.
+	// +optional
+	BaseURL string `json:"base_url,omitempty"`
+
+	// MaxCostPerRun is the per-run budget cap in USD (e.g. "1.50").
+	// The controller terminates runs that exceed this amount.
+	// +optional
+	// +kubebuilder:validation:Pattern=`^[0-9]+(\.[0-9]+)?$`
+	MaxCostPerRun string `json:"max_cost_per_run,omitempty"`
+
+	// MaxTokensPerRun is the default token limit per run.
+	// Agents can set lower limits but not higher.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	MaxTokensPerRun int `json:"max_tokens_per_run,omitempty"`
+
+	// MaxTimeoutSeconds is the default execution timeout per run.
+	// Agents can set lower timeouts but not higher.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	MaxTimeoutSeconds int `json:"max_timeout_seconds,omitempty"`
+
+	// ModelConfig holds model-specific tuning parameters.
+	// +optional
+	ModelConfig *ModelConfig `json:"model_config,omitempty"`
+}
+
+type ModelConfig struct {
+	// Temperature controls randomness (0.0 = deterministic, 1.0+ = creative).
+	// Serialized as a string to satisfy CRD schema constraints (e.g. "0.2").
+	// +optional
+	Temperature string `json:"temperature,omitempty"`
+
+	// MaxOutputTokens limits the length of each model response.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	MaxOutputTokens int `json:"max_output_tokens,omitempty"`
+
+	// MaxContextTokens limits the total context window usage.
+	// The controller truncates instruction content to fit within this budget.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	MaxContextTokens int `json:"max_context_tokens,omitempty"`
+
+	// Thinking configures extended thinking / chain-of-thought.
+	// +optional
+	Thinking *ThinkingConfig `json:"thinking,omitempty"`
+
+	// Parameters is a provider-specific key-value map for settings
+	// not covered by the common fields (e.g. top_p, frequency_penalty).
+	// +optional
+	Parameters map[string]string `json:"parameters,omitempty"`
+}
+
+type ThinkingConfig struct {
+	// Enabled controls whether extended thinking is active.
+	// +kubebuilder:validation:Required
+	Enabled bool `json:"enabled"`
+
+	// BudgetTokens is the max tokens the model can use for thinking.
+	// Maps to Claude's budget_tokens or OpenAI's max_completion_tokens for reasoning.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	BudgetTokens int `json:"budget_tokens,omitempty"`
 }
 
 type GitProvider struct {

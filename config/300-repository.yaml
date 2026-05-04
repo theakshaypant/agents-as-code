@@ -135,11 +135,76 @@ spec:
                     ai:
                       description: AI configures the LLM provider used by agents for this repository.
                       properties:
+                        base_url:
+                          description: BaseURL overrides the LLM API endpoint for custom or self-hosted providers.
+                          type: string
                         enabled:
                           description: Enabled controls whether AI agents can run against this repository.
                           type: boolean
+                        max_cost_per_run:
+                          description: |-
+                            MaxCostPerRun is the per-run budget cap in USD (e.g. "1.50").
+                            The controller terminates runs that exceed this amount.
+                          pattern: ^[0-9]+(\.[0-9]+)?$
+                          type: string
+                        max_timeout_seconds:
+                          description: |-
+                            MaxTimeoutSeconds is the default execution timeout per run.
+                            Agents can set lower timeouts but not higher.
+                          minimum: 1
+                          type: integer
+                        max_tokens_per_run:
+                          description: |-
+                            MaxTokensPerRun is the default token limit per run.
+                            Agents can set lower limits but not higher.
+                          minimum: 1
+                          type: integer
+                        model:
+                          description: Model overrides the default LLM model for this provider.
+                          type: string
+                        model_config:
+                          description: ModelConfig holds model-specific tuning parameters.
+                          properties:
+                            max_context_tokens:
+                              description: |-
+                                MaxContextTokens limits the total context window usage.
+                                The controller truncates instruction content to fit within this budget.
+                              minimum: 1
+                              type: integer
+                            max_output_tokens:
+                              description: MaxOutputTokens limits the length of each model response.
+                              minimum: 1
+                              type: integer
+                            parameters:
+                              additionalProperties:
+                                type: string
+                              description: |-
+                                Parameters is a provider-specific key-value map for settings
+                                not covered by the common fields (e.g. top_p, frequency_penalty).
+                              type: object
+                            temperature:
+                              description: |-
+                                Temperature controls randomness (0.0 = deterministic, 1.0+ = creative).
+                                Serialized as a string to satisfy CRD schema constraints (e.g. "0.2").
+                              type: string
+                            thinking:
+                              description: Thinking configures extended thinking / chain-of-thought.
+                              properties:
+                                budget_tokens:
+                                  description: |-
+                                    BudgetTokens is the max tokens the model can use for thinking.
+                                    Maps to Claude's budget_tokens or OpenAI's max_completion_tokens for reasoning.
+                                  minimum: 1
+                                  type: integer
+                                enabled:
+                                  description: Enabled controls whether extended thinking is active.
+                                  type: boolean
+                              required:
+                                - enabled
+                              type: object
+                          type: object
                         provider:
-                          description: Provider is the LLM provider name (e.g. openai, anthropic).
+                          description: Provider is the LLM provider name (e.g. openai, anthropic, gemini).
                           type: string
                         secret_ref:
                           description: SecretRef references the Kubernetes Secret containing the LLM API key.
