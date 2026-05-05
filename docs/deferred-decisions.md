@@ -98,13 +98,53 @@ This is the complement to template variables: variables handle the read path (co
 
 - **Result format**: The current `agentharness.Result` struct has `Comment`, `PRTitle`, `PRBody`. This needs to be expanded to support reviews (with per-file comments), labels, status checks. Need to define a structured JSON schema the agent outputs.
 
-- **Harness-agnostic result collection**: Currently tied to the OpenHands harness (JSONL parsing + result file). Result hooks should work regardless of the execution backend — the controller reads a well-known result file from the sandbox.
+- **Result collection**: The runtime writes to `/output/result.json`. The controller reads this file after Pod completion. Need to handle the case where the runtime crashes before writing the result file.
 
 - **Multiple actions per result**: An agent might want to post a comment AND add a label AND set a status check in one run. The result format should support a list of actions.
 
 - **Partial failure**: If posting a comment succeeds but adding a label fails, how is this reported in AgentRunStatus? Each action should have its own success/failure status.
 
 - **Interaction with MCP tools**: An agent could have both MCP tools and result hooks. The controller should not duplicate actions the agent already performed via MCP. May need to track which actions came from which path in `AgentRunStatus.Actions`.
+
+---
+
+## Execution Model (Part 6 — types implemented)
+
+Every agent runs in an isolated sandbox (K8s SIG Agent Sandbox). The `SandboxTemplate` is configured on the Repository CR via `RuntimeConfig`. The controller creates sandboxes, writes config, runs the agent, reads results, and executes result actions via the agent-sandbox SDK. OpenHands has been removed (`pkg/agentharness/openhands.go` deleted) — the execution model is generic and runtime-agnostic.
+
+### Items to implement
+
+- **Reference runtime image**: The runtime contract is defined (input at `/etc/aac/config.json`, output at `/output/result.json`), but no reference implementation exists yet. Need to build a thin runtime that reads the config, runs an agentic LLM loop, and writes structured results.
+
+- **MCP server communication**: Image-based MCP servers likely expose HTTP on localhost; command-based ones use stdio. The runtime config should specify the transport per server. The current `MCPServerSpec` doesn't have a transport field.
+
+- **Repo clone in sandbox**: When `agent.tekton.dev/clone-repo: "true"` is set, the controller needs to clone the repo into the sandbox at the right SHA/branch using git credentials from the Repository CR. Could use `WriteFile` + `Run` (write a clone script, execute it) or a dedicated mechanism.
+
+- **Sandbox resource limits**: Resource requests/limits for sandboxes are configured on the SandboxTemplate. May need to expose overrides on `RuntimeConfig` for multi-tenant clusters.
+
+- **Sandbox cleanup policy**: When to destroy completed sandboxes? Immediately after result collection, after a TTL, or keep for debugging? Probably configurable on the Repository CR.
+
+- **Streaming vs batch results**: Currently designed as batch (wait for sandbox completion, read result file). Streaming (controller processes actions as the agent produces them) would give better UX but is more complex.
+
+---
+
+## Knowledge Graph (deferred entirely)
+
+The KG feature (automatic code graph via graphify, context filtering, per-branch PVs) is deferred. The types remain on the Repository CR (`KnowledgeGraphSpec`, `KGStatus`, etc.) but KG is not presented as a core concept. The KG controller exists but is not exercised by the agent execution path.
+
+### Why deferred
+
+- The agent execution model shifted to template variables + MCP tools for context injection, which covers the immediate use cases without a KG
+- Graphify quality on Go repos has known weaknesses (node deduplication, fragmented communities)
+- The context filtering pipeline (seed extraction → strategy selection → traversal → truncation) adds significant complexity for unclear benefit until the KG quality improves
+
+### Items to revisit
+
+- **KG as an MCP server**: Instead of the controller injecting KG context into the prompt, expose the KG as an MCP server that the agent can query. This is more flexible — the agent decides what context it needs, not the controller.
+
+- **KG-powered template variables**: Variables like `{{ related_code }}` or `{{ architectural_context }}` that are backed by KG queries rather than provider API calls.
+
+- **Remove KG types from Repository CR**: If KG is not coming back soon, remove the types to simplify the API surface. Currently keeping them since they're already implemented and don't cause harm.
 
 ---
 

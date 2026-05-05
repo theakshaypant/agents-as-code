@@ -12,6 +12,7 @@
 | 3 | AgentRun redesign | Types implemented |
 | 4 | Template Variables | Design complete, not started |
 | 5 | Result Hooks | Design complete, not started |
+| 6 | Execution Model | Design complete, not started |
 | — | Adapter/controller logic | Not started |
 | — | Provider event enrichment | Not started |
 
@@ -668,6 +669,251 @@ The controller parses the agent's structured output and posts the review using t
 
 ---
 
+## Part 6: Execution Model
+
+Every AgentRun executes in an isolated sandbox provisioned by the [K8s SIG Agent Sandbox](https://github.com/kubernetes-sigs/agent-sandbox). The sandbox is the security boundary — it provides process isolation, network policy enforcement, and resource limits. Isolation is never optional, regardless of whether the agent has MCP tools, a repo clone, or neither. This ensures a uniform security boundary for all agents and a standardised way to enforce network policies and security rules.
+
+The controller creates sandboxes from a `SandboxTemplate` configured on the Repository CR (`settings.runtime.sandbox_template`). The template defines the container image, resource limits, and base configuration for sandboxes.
+
+### Repo clone is opt-in
+
+The repo clone is explicit via an annotation on the Agent definition:
+
+```yaml
+annotations:
+  agent.tekton.dev/clone-repo: "true"
+```
+
+Agents that only need prompt context (labeler reading PR title, reviewer getting diff via `{{ pull_request_diff }}`) skip the clone. Agents that need filesystem access (implementation, test fixing) opt in.
+
+### Sandbox structure
+
+```
+┌─────────────────────────────────────────────────┐
+│  AgentRun Sandbox (always created)              │
+│  Created from SandboxTemplate on Repository CR  │
+│                                                 │
+│  Controller interactions via agent-sandbox SDK: │
+│  1. WriteFile(/etc/aac/config.json)             │
+│  2. Run(runtime command)                        │
+│  3. ReadFile(/output/result.json)               │
+│  4. Destroy()                                   │
+│                                                 │
+│  Inside the sandbox:                            │
+│  ┌─────────────────────────────────────────┐    │
+│  │ runtime process                         │    │
+│  │ - Reads config from /etc/aac/config.json│    │
+│  │ - Calls LLM API (credentials from env)  │    │
+│  │ - Writes result to /output/result.json  │    │
+│  └─────────────────────────────────────────┘    │
+│                                                 │
+│  Security:                                      │
+│  - NetworkPolicy from Repository CR             │
+│  - No K8s API access                            │
+│  - No cross-namespace access                    │
+└─────────────────────────────────────────────────┘
+```
+
+### Runtime contract
+
+The runtime is whatever runs inside the sandbox. The controller doesn't care what it is — it could be a thin Go binary, Claude Code, or any agent framework. The controller interacts with the sandbox exclusively through the agent-sandbox SDK (`WriteFile`, `Run`, `ReadFile`, `Destroy`).
+
+**Input** (written to `/etc/aac/config.json` via SDK):
+```json
+{
+  "system_prompt": "resolved prompt with variables substituted",
+  "instructions": [
+    {"name": "review-standards.md", "content": "...resolved content..."}
+  ],
+  "model": {
+    "provider": "anthropic",
+    "model": "claude-sonnet-4-20250514",
+    "api_key_env": "LLM_API_KEY",
+    "base_url": "",
+    "config": {
+      "temperature": "0.2",
+      "max_output_tokens": 8192,
+      "thinking": {"enabled": true, "budget_tokens": 10000}
+    }
+  },
+  "mcp_servers": [
+    {"name": "github", "endpoint": "localhost:8080"}
+  ],
+  "limits": {
+    "max_tokens": 100000,
+    "timeout_seconds": 300
+  },
+  "workspace": "/workspace"
+}
+```
+
+**Output** (read from `/output/result.json` via SDK):
+```json
+{
+  "actions": [
+    {
+      "type": "review",
+      "body": "Overall this looks good...",
+      "event": "COMMENT",
+      "comments": [
+        {"path": "pkg/api/user.go", "line": 42, "body": "Potential nil deref"}
+      ]
+    },
+    {
+      "type": "comment",
+      "body": "Reviewed — found 2 issues."
+    },
+    {
+      "type": "label",
+      "add": ["needs-changes"],
+      "remove": ["ready-for-review"]
+    }
+  ],
+  "tokens_used": 28400,
+  "cost_usd": "0.42"
+}
+```
+
+### Repository CR: RuntimeConfig
+
+Add to Settings so the infra team controls the sandbox configuration for all agents:
+
+```go
+type RuntimeConfig struct {
+    // SandboxTemplate is the name of the SandboxTemplate CR used to create
+    // agent execution environments.
+    // +kubebuilder:validation:Required
+    SandboxTemplate string `json:"sandbox_template"`
+
+    // ServiceAccountName is the K8s service account for sandbox Pods.
+    // +optional
+    ServiceAccountName string `json:"service_account_name,omitempty"`
+}
+```
+
+### AgentRunStatus
+
+`SandboxName` and `ExecID` track the sandbox instance and execution:
+
+```go
+type AgentRunStatus struct {
+    duckv1.Status `json:",inline"`
+
+    StartTime      *metav1.Time  `json:"start_time,omitempty"`
+    CompletionTime *metav1.Time  `json:"completion_time,omitempty"`
+    TokensUsed     int           `json:"tokens_used,omitempty"`
+    CostUSD        string        `json:"cost_usd,omitempty"`
+    Actions        []AgentAction `json:"actions,omitempty"`
+    SandboxName    string        `json:"sandbox_name,omitempty"`
+    ExecID         string        `json:"exec_id,omitempty"`
+}
+```
+
+### End-to-end flow
+
+```
+1. Webhook → Adapter
+   - Parse event, match Repository CR, match Agent definitions
+   - Resolve template variables (fetch diff, PR details, etc.)
+   - Resolve instructions (fetch repo files, remote URLs)
+   - Resolve limits: min(agent.limits, repo.settings.ai.max*)
+   - Create AgentRun CR
+
+2. AgentRun Reconciler
+   - Read AgentRun spec + Repository CR settings
+   - Create sandbox from SandboxTemplate (repo.settings.runtime.sandbox_template)
+   - Write runtime config to sandbox via SDK (WriteFile)
+   - Run agent command in sandbox via SDK (Run)
+   - Read /output/result.json from sandbox via SDK (ReadFile)
+   - Execute result actions via provider API
+   - Update AgentRun status
+   - Destroy sandbox via SDK (Destroy)
+
+3. Status
+   - Set AgentRun conditions to Succeeded/Failed
+   - Record sandbox_name, exec_id, tokens_used, cost_usd, actions
+```
+
+### Example: reviewer (no clone, template vars + MCP for write)
+
+```yaml
+apiVersion: agent.tekton.dev/v1alpha1
+kind: Agent
+metadata:
+  name: code-reviewer
+  annotations:
+    agent.tekton.dev/on-event: "pull_request"
+    agent.tekton.dev/on-target-branch: "main"
+spec:
+  system_prompt: |
+    Review this pull request for bugs and security issues:
+
+    ## PR #{{ pull_request_number }}: {{ pull_request_title }}
+    {{ pull_request_description }}
+
+    ## Diff
+    {{ pull_request_diff }}
+  tools:
+    mcp_servers:
+      - github
+    allowed:
+      - "github:create_pull_request_review"
+  limits:
+    max_tokens: 100000
+    timeout_seconds: 300
+```
+
+### Example: implementer (clone + shell access)
+
+```yaml
+apiVersion: agent.tekton.dev/v1alpha1
+kind: Agent
+metadata:
+  name: implementer
+  annotations:
+    agent.tekton.dev/on-event: "issue_comment"
+    agent.tekton.dev/on-comment: "/implement"
+    agent.tekton.dev/clone-repo: "true"
+spec:
+  system_prompt: |
+    Implement the requested changes in the repository.
+
+    Issue: {{ issue_body }}
+    Discussion: {{ issue_comments }}
+  tools:
+    mcp_servers:
+      - github
+  limits:
+    max_tokens: 200000
+    timeout_seconds: 600
+```
+
+### Example: labeler (no clone, no MCP, result hooks only)
+
+```yaml
+apiVersion: agent.tekton.dev/v1alpha1
+kind: Agent
+metadata:
+  name: labeler
+  annotations:
+    agent.tekton.dev/on-event: "pull_request"
+spec:
+  system_prompt: |
+    Categorize this PR by reading its title and description.
+
+    Title: {{ pull_request_title }}
+    Description: {{ pull_request_description }}
+    Changed files: {{ pull_request_files }}
+
+    Respond with a JSON object:
+    {"actions": [{"type": "label", "add": ["<category>"]}]}
+  limits:
+    max_tokens: 4000
+    timeout_seconds: 60
+```
+
+---
+
 ## What changes from today
 
 | Area | Before | After |
@@ -677,6 +923,8 @@ The controller parses the agent's structured output and posts the review using t
 | Instructions | None | PAC-style annotation refs (repo + remote URLs), explicit opt-in |
 | Tools | Hardcoded OpenHands | Declarative MCP servers on Repo CR, agent selects by name |
 | Agent output | Hardcoded harness result | Result hooks (controller-mediated) or MCP tools (agent-mediated) |
+| Execution | OpenHands in K8s SIG Agent Sandbox | Generic runtime in isolated sandbox, SandboxTemplate on Repo CR |
+| Repo clone | Always (implicit) | Opt-in via `clone-repo` annotation |
 | Model config | None | Temperature, thinking, context window, output tokens on Repo CR |
 | Network | No controls | Preset + egress allowlist on Repo CR |
 | Security | No controls | Deferred (see deferred-decisions.md) |
@@ -686,13 +934,23 @@ The controller parses the agent's structured output and posts the review using t
 
 ## Files to modify
 
-- `pkg/apis/agent/v1alpha1/types.go` — add Settings fields (MCPServers, Network, AI caps, ModelConfig), shared types (EnvVar, KeyRef) **[done]**
-- `pkg/apis/agent/v1alpha1/agent_types.go` — redesign AgentSpec (system_prompt, tools ref, limits) **[done]**
-- `pkg/apis/agent/v1alpha1/agentrun_types.go` — redesign AgentRunSpec (system_prompt, instructions, tools, enriched event), remove KG context **[done]**
-- `config/300-repository.yaml` — regenerate CRD with new settings fields **[done]**
-- `config/300-agent.yaml` — regenerate CRD with new agent fields **[done]**
-- `config/300-agentrun.yaml` — regenerate CRD **[done]**
-- `pkg/matcher/parse.go` — update validation for system_prompt, snake_case limits **[done]**
-- `pkg/adapter/adapter.go` — resolve instruction annotations, populate enriched event, resolve limits **[not started]**
-- `pkg/provider/github/parse.go` — extract PR number, comment body, labels, changed files into event **[not started]**
-- `pkg/agentharness/openhands.go` — update BuildTask to use new AgentRun types **[not started]**
+### Done
+- `pkg/apis/agent/v1alpha1/types.go` — add Settings fields (MCPServers, Network, AI caps, ModelConfig), shared types (EnvVar, KeyRef)
+- `pkg/apis/agent/v1alpha1/agent_types.go` — redesign AgentSpec (system_prompt, tools ref, limits)
+- `pkg/apis/agent/v1alpha1/agentrun_types.go` — redesign AgentRunSpec (system_prompt, instructions, tools, enriched event), remove KG context
+- `config/300-repository.yaml` — regenerate CRD with new settings fields
+- `config/300-agent.yaml` — regenerate CRD with new agent fields
+- `config/300-agentrun.yaml` — regenerate CRD
+- `pkg/matcher/parse.go` — update validation for system_prompt, snake_case limits
+
+### To do (types — done)
+- `pkg/apis/agent/v1alpha1/types.go` — add `RuntimeConfig` to `Settings`
+- `config/300-repository.yaml` — regenerate CRD
+
+### To do (code)
+- `pkg/adapter/adapter.go` — resolve template variables, instruction annotations, enriched event, limits
+- `pkg/provider/github/parse.go` — extract PR number, comment body, labels, changed files into event
+- `pkg/reconciler/agentrun/reconciler.go` — AgentRun reconciler (sandbox creation, result collection, action execution)
+
+### Deleted
+- `pkg/agentharness/openhands.go` — OpenHands-specific harness (replaced by generic runtime contract)
