@@ -16,4 +16,14 @@ type Interface interface {
 	GetFiles(ctx context.Context, event *Event) ([]string, error)
 	GetAgentDir(ctx context.Context, event *Event, path string) (string, error)
 	CheckPermission(ctx context.Context, event *Event) (bool, error)
+
+	GetPullRequestDescription(ctx context.Context, event *Event) (string, error)
+	GetPullRequestDiff(ctx context.Context, event *Event) (string, error)
+	GetPullRequestReviews(ctx context.Context, event *Event) (string, error)
+	GetPullRequestComments(ctx context.Context, event *Event) (string, error)
+
+	GetIssueTitle(ctx context.Context, event *Event) (string, error)
+	GetIssueBody(ctx context.Context, event *Event) (string, error)
+	GetIssueComments(ctx context.Context, event *Event) (string, error)
+	GetIssueLabels(ctx context.Context, event *Event) (string, error)
 }

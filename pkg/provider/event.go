@@ -30,6 +30,8 @@ type Event struct {
 
 	PullRequestNumber int
 	PullRequestTitle  string
+	PullRequestAuthor string
+	PullRequestURL    string
 
 	CommentBody string
 	Label       string

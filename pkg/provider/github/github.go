@@ -53,11 +53,6 @@ func (p *Provider) CreateComment(_ context.Context, _ *provider.Event, _ string)
 	return nil
 }
 
-func (p *Provider) GetFiles(_ context.Context, _ *provider.Event) ([]string, error) {
-	// TODO: list changed files from push or pull request via GitHub API
-	return nil, nil
-}
-
 func (p *Provider) GetAgentDir(ctx context.Context, evt *provider.Event, path string) (string, error) {
 	if p.client == nil {
 		return "", fmt.Errorf("github client not initialized")
@@ -124,8 +119,217 @@ func (p *Provider) GetAgentDir(ctx context.Context, evt *provider.Event, path st
 	return strings.Join(docs, "\n---\n"), nil
 }
 
-// TODO: this currently only checks write permission. May need richer policy
-// support in the future (e.g. ok-to-test approval, org membership, CODEOWNERS).
+func (p *Provider) GetFiles(ctx context.Context, evt *provider.Event) ([]string, error) {
+	if p.client == nil {
+		return nil, fmt.Errorf("github client not initialized")
+	}
+	if evt.PullRequestNumber == 0 {
+		return nil, nil
+	}
+
+	var allFiles []string
+	opts := &gh.ListOptions{PerPage: 100}
+	for {
+		files, resp, err := p.client.PullRequests.ListFiles(ctx, evt.Organization, evt.Repository, evt.PullRequestNumber, opts)
+		if err != nil {
+			return nil, fmt.Errorf("listing PR files: %w", err)
+		}
+		for _, f := range files {
+			allFiles = append(allFiles, f.GetFilename())
+		}
+		if resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
+	}
+	return allFiles, nil
+}
+
+func (p *Provider) GetPullRequestDescription(ctx context.Context, evt *provider.Event) (string, error) {
+	if p.client == nil {
+		return "", fmt.Errorf("github client not initialized")
+	}
+	if evt.PullRequestNumber == 0 {
+		return "", nil
+	}
+	pr, _, err := p.client.PullRequests.Get(ctx, evt.Organization, evt.Repository, evt.PullRequestNumber)
+	if err != nil {
+		return "", fmt.Errorf("fetching PR description: %w", err)
+	}
+	return pr.GetBody(), nil
+}
+
+func (p *Provider) GetPullRequestDiff(ctx context.Context, evt *provider.Event) (string, error) {
+	if p.client == nil {
+		return "", fmt.Errorf("github client not initialized")
+	}
+	if evt.PullRequestNumber == 0 {
+		return "", nil
+	}
+	diff, _, err := p.client.PullRequests.GetRaw(ctx, evt.Organization, evt.Repository, evt.PullRequestNumber, gh.RawOptions{Type: gh.Diff})
+	if err != nil {
+		return "", fmt.Errorf("fetching PR diff: %w", err)
+	}
+	return diff, nil
+}
+
+func (p *Provider) GetPullRequestReviews(ctx context.Context, evt *provider.Event) (string, error) {
+	if p.client == nil {
+		return "", fmt.Errorf("github client not initialized")
+	}
+	if evt.PullRequestNumber == 0 {
+		return "", nil
+	}
+
+	var allReviews []*gh.PullRequestReview
+	opts := &gh.ListOptions{PerPage: 100}
+	for {
+		reviews, resp, err := p.client.PullRequests.ListReviews(ctx, evt.Organization, evt.Repository, evt.PullRequestNumber, opts)
+		if err != nil {
+			return "", fmt.Errorf("listing PR reviews: %w", err)
+		}
+		allReviews = append(allReviews, reviews...)
+		if resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
+	}
+
+	if len(allReviews) == 0 {
+		return "", nil
+	}
+
+	var b strings.Builder
+	for i, r := range allReviews {
+		if i > 0 {
+			b.WriteString("\n---\n")
+		}
+		user := "unknown"
+		if r.User != nil {
+			user = r.GetUser().GetLogin()
+		}
+		fmt.Fprintf(&b, "@%s (%s)", user, r.GetState())
+		if body := r.GetBody(); body != "" {
+			fmt.Fprintf(&b, ": %s", body)
+		}
+	}
+	return b.String(), nil
+}
+
+func (p *Provider) GetPullRequestComments(ctx context.Context, evt *provider.Event) (string, error) {
+	if p.client == nil {
+		return "", fmt.Errorf("github client not initialized")
+	}
+	if evt.PullRequestNumber == 0 {
+		return "", nil
+	}
+
+	var allComments []*gh.IssueComment
+	opts := &gh.IssueListCommentsOptions{ListOptions: gh.ListOptions{PerPage: 100}}
+	for {
+		comments, resp, err := p.client.Issues.ListComments(ctx, evt.Organization, evt.Repository, evt.PullRequestNumber, opts)
+		if err != nil {
+			return "", fmt.Errorf("listing PR comments: %w", err)
+		}
+		allComments = append(allComments, comments...)
+		if resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
+	}
+
+	return formatComments(allComments), nil
+}
+
+func (p *Provider) GetIssueTitle(ctx context.Context, evt *provider.Event) (string, error) {
+	if p.client == nil {
+		return "", fmt.Errorf("github client not initialized")
+	}
+	if evt.PullRequestNumber == 0 {
+		return "", nil
+	}
+	issue, _, err := p.client.Issues.Get(ctx, evt.Organization, evt.Repository, evt.PullRequestNumber)
+	if err != nil {
+		return "", fmt.Errorf("fetching issue title: %w", err)
+	}
+	return issue.GetTitle(), nil
+}
+
+func (p *Provider) GetIssueBody(ctx context.Context, evt *provider.Event) (string, error) {
+	if p.client == nil {
+		return "", fmt.Errorf("github client not initialized")
+	}
+	if evt.PullRequestNumber == 0 {
+		return "", nil
+	}
+	issue, _, err := p.client.Issues.Get(ctx, evt.Organization, evt.Repository, evt.PullRequestNumber)
+	if err != nil {
+		return "", fmt.Errorf("fetching issue body: %w", err)
+	}
+	return issue.GetBody(), nil
+}
+
+func (p *Provider) GetIssueComments(ctx context.Context, evt *provider.Event) (string, error) {
+	if p.client == nil {
+		return "", fmt.Errorf("github client not initialized")
+	}
+	if evt.PullRequestNumber == 0 {
+		return "", nil
+	}
+
+	var allComments []*gh.IssueComment
+	opts := &gh.IssueListCommentsOptions{ListOptions: gh.ListOptions{PerPage: 100}}
+	for {
+		comments, resp, err := p.client.Issues.ListComments(ctx, evt.Organization, evt.Repository, evt.PullRequestNumber, opts)
+		if err != nil {
+			return "", fmt.Errorf("listing issue comments: %w", err)
+		}
+		allComments = append(allComments, comments...)
+		if resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
+	}
+
+	return formatComments(allComments), nil
+}
+
+func (p *Provider) GetIssueLabels(ctx context.Context, evt *provider.Event) (string, error) {
+	if p.client == nil {
+		return "", fmt.Errorf("github client not initialized")
+	}
+	if evt.PullRequestNumber == 0 {
+		return "", nil
+	}
+	issue, _, err := p.client.Issues.Get(ctx, evt.Organization, evt.Repository, evt.PullRequestNumber)
+	if err != nil {
+		return "", fmt.Errorf("fetching issue labels: %w", err)
+	}
+	var labels []string
+	for _, l := range issue.Labels {
+		labels = append(labels, l.GetName())
+	}
+	return strings.Join(labels, ", "), nil
+}
+
+func formatComments(comments []*gh.IssueComment) string {
+	if len(comments) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for i, c := range comments {
+		if i > 0 {
+			b.WriteString("\n---\n")
+		}
+		user := "unknown"
+		if c.User != nil {
+			user = c.GetUser().GetLogin()
+		}
+		fmt.Fprintf(&b, "@%s: %s", user, c.GetBody())
+	}
+	return b.String()
+}
+
 func (p *Provider) CheckPermission(ctx context.Context, evt *provider.Event) (bool, error) {
 	if p.client == nil {
 		return false, fmt.Errorf("github client not initialized")

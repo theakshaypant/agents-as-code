@@ -75,6 +75,8 @@ func parsePullRequestEvent(evt *provider.Event, e *gh.PullRequestEvent) *provide
 	evt.Sender = e.GetPullRequest().GetUser().GetLogin()
 	evt.PullRequestNumber = e.GetPullRequest().GetNumber()
 	evt.PullRequestTitle = e.GetPullRequest().GetTitle()
+	evt.PullRequestAuthor = e.GetPullRequest().GetUser().GetLogin()
+	evt.PullRequestURL = e.GetPullRequest().GetHTMLURL()
 
 	return evt
 }
@@ -91,6 +93,8 @@ func parsePullRequestReviewEvent(evt *provider.Event, e *gh.PullRequestReviewEve
 	evt.Sender = e.GetSender().GetLogin()
 	evt.PullRequestNumber = e.GetPullRequest().GetNumber()
 	evt.PullRequestTitle = e.GetPullRequest().GetTitle()
+	evt.PullRequestAuthor = e.GetPullRequest().GetUser().GetLogin()
+	evt.PullRequestURL = e.GetPullRequest().GetHTMLURL()
 
 	// TODO: extract review body, state (approved/changes_requested/commented)
 	return evt
