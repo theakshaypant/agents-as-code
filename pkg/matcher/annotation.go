@@ -78,25 +78,28 @@ func matchTargetBranch(annots map[string]string, evt *provider.Event) bool {
 	return false
 }
 
-type CommentMatchResult int
+type commentMatchResult struct {
+	status  int
+	pattern string
+}
 
 const (
-	CommentNotApplicable CommentMatchResult = iota
-	CommentMatched
-	CommentNotMatched
+	commentNotApplicable = iota
+	commentMatched
+	commentNotMatched
 )
 
-func matchComment(annots map[string]string, evt *provider.Event) CommentMatchResult {
+func matchComment(annots map[string]string, evt *provider.Event) commentMatchResult {
 	val, ok := annots[keys.OnComment]
 	if !ok {
-		return CommentNotApplicable
+		return commentMatchResult{status: commentNotApplicable}
 	}
 	if evt.TriggerType != provider.TriggerIssueComment {
-		return CommentNotMatched
+		return commentMatchResult{status: commentNotMatched}
 	}
 	patterns, err := getAnnotationValues(val)
 	if err != nil || len(patterns) == 0 {
-		return CommentNotMatched
+		return commentMatchResult{status: commentNotMatched}
 	}
 	comment := strings.TrimSpace(evt.CommentBody)
 	for _, pattern := range patterns {
@@ -105,10 +108,10 @@ func matchComment(annots map[string]string, evt *provider.Event) CommentMatchRes
 			continue
 		}
 		if re.MatchString(comment) {
-			return CommentMatched
+			return commentMatchResult{status: commentMatched, pattern: pattern}
 		}
 	}
-	return CommentNotMatched
+	return commentMatchResult{status: commentNotMatched}
 }
 
 func matchPathChange(annots map[string]string, changedFiles []string) bool {

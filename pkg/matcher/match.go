@@ -8,6 +8,9 @@ import (
 
 type AgentMatch struct {
 	Agent *agentv1alpha1.Agent
+	// MatchedComment is the on-comment regex pattern that matched, if any.
+	// Used to extract trigger_comment_args (comment text after the command).
+	MatchedComment string
 }
 
 func MatchAgentsToEvent(agents []agentv1alpha1.Agent, evt *provider.Event, changedFiles []string, logger *zap.SugaredLogger) []AgentMatch {
@@ -21,15 +24,15 @@ func MatchAgentsToEvent(agents []agentv1alpha1.Agent, evt *provider.Event, chang
 		// if present and matches, the agent is selected immediately.
 		// if the event is a comment but on-comment doesn't match, skip entirely.
 		commentResult := matchComment(annots, evt)
-		if commentResult == CommentMatched {
+		if commentResult.status == commentMatched {
 			logger.Infow("matched agent to event via on-comment",
 				"agent", agent.Name,
 				"event_type", evt.TriggerType,
 			)
-			matches = append(matches, AgentMatch{Agent: agent})
+			matches = append(matches, AgentMatch{Agent: agent, MatchedComment: commentResult.pattern})
 			continue
 		}
-		if commentResult == CommentNotMatched {
+		if commentResult.status == commentNotMatched {
 			continue
 		}
 

@@ -10,11 +10,13 @@ import (
 
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	agentv1alpha1 "github.com/theakshaypant/agents-as-code/pkg/apis/agent/v1alpha1"
 	"github.com/theakshaypant/agents-as-code/pkg/matcher"
 	"github.com/theakshaypant/agents-as-code/pkg/provider"
+	"github.com/theakshaypant/agents-as-code/pkg/template"
 )
 
 const (
@@ -106,12 +108,15 @@ func (a *Adapter) HandleEvent(ctx context.Context) http.HandlerFunc {
 		}
 
 		go func() {
+			// Detach from the HTTP request context so provider API calls
+			// don't get canceled when the handler returns.
+			bgCtx := context.Background()
 			defer func() {
 				if r := recover(); r != nil {
 					logger.Errorf("panic processing event: %v", r)
 				}
 			}()
-			a.processEvent(ctx, evt, prov, repo, logger)
+			a.processEvent(bgCtx, evt, prov, repo, logger)
 		}()
 
 		writeResponse(w, http.StatusAccepted, "accepted")
@@ -256,12 +261,35 @@ func (a *Adapter) processEvent(ctx context.Context, evt *provider.Event, prov pr
 	}
 
 	for _, m := range matches {
-		logger.Infow("agent matched",
-			"agent", m.Agent.Name,
-			"system_prompt", m.Agent.Spec.SystemPrompt,
-		)
-		// TODO: create AgentRun CR for each matched agent
-		// Copy trigger annotations: matcher.TriggerAnnotations(m.Agent.GetAnnotations())
+		logger.Infow("agent matched", "agent", m.Agent.Name)
+
+		resolver := template.NewVariableResolver(evt, repo, prov, logger, m.MatchedComment)
+		needed := template.ExtractVariables(m.Agent.Spec.SystemPrompt)
+		vars := resolver.Resolve(ctx, needed)
+		resolvedPrompt := template.ResolveVariables(m.Agent.Spec.SystemPrompt, vars, logger)
+
+		agentRun := &agentv1alpha1.AgentRun{
+			ObjectMeta: metav1.ObjectMeta{
+				GenerateName: m.Agent.Name + "-",
+				Namespace:    repo.Namespace,
+				Annotations:  matcher.TriggerAnnotations(m.Agent.GetAnnotations()),
+			},
+			Spec: agentv1alpha1.AgentRunSpec{
+				AgentRef:      m.Agent.Name,
+				RepositoryRef: repo.Name,
+				SystemPrompt:  resolvedPrompt,
+				Tools:         m.Agent.Spec.Tools,
+				Event:         buildEventInfo(evt),
+				Limits:        resolveLimits(m.Agent.Spec.Limits, repo.Spec.Settings),
+			},
+		}
+
+		if err := a.client.Create(ctx, agentRun); err != nil {
+			logger.Errorf("failed to create AgentRun for agent %s: %v", m.Agent.Name, err)
+			continue
+		}
+
+		logger.Infow("created AgentRun", "agent", m.Agent.Name, "name", agentRun.Name)
 	}
 }
 
@@ -292,6 +320,52 @@ func (a *Adapter) matchAgents(ctx context.Context, evt *provider.Event, prov pro
 
 	logger.Infow("discovered agent definitions", "count", len(agents))
 	return matcher.MatchAgentsToEvent(agents, evt, changedFiles, logger)
+}
+
+func buildEventInfo(evt *provider.Event) agentv1alpha1.AgentRunEventInfo {
+	info := agentv1alpha1.AgentRunEventInfo{
+		Type:   string(evt.TriggerType),
+		Action: evt.EventType,
+		SHA:    evt.SHA,
+		Branch: evt.BaseBranch,
+		Sender: evt.Sender,
+		URL:    evt.SHAURL,
+	}
+	if evt.PullRequestNumber > 0 {
+		info.PullRequest = &agentv1alpha1.PullRequestInfo{
+			Number:     evt.PullRequestNumber,
+			Title:      evt.PullRequestTitle,
+			HeadBranch: evt.HeadBranch,
+			BaseBranch: evt.BaseBranch,
+		}
+	}
+	if evt.CommentBody != "" {
+		info.Comment = &agentv1alpha1.CommentInfo{
+			Body: evt.CommentBody,
+		}
+	}
+	if evt.Label != "" {
+		info.Labels = []string{evt.Label}
+	}
+	return info
+}
+
+func resolveLimits(agentLimits agentv1alpha1.AgentLimits, settings *agentv1alpha1.Settings) agentv1alpha1.AgentLimits {
+	result := agentLimits
+	if settings == nil || settings.AI == nil {
+		return result
+	}
+	if settings.AI.MaxTokensPerRun > 0 {
+		if result.MaxTokens == 0 || result.MaxTokens > settings.AI.MaxTokensPerRun {
+			result.MaxTokens = settings.AI.MaxTokensPerRun
+		}
+	}
+	if settings.AI.MaxTimeoutSeconds > 0 {
+		if result.TimeoutSeconds == 0 || result.TimeoutSeconds > settings.AI.MaxTimeoutSeconds {
+			result.TimeoutSeconds = settings.AI.MaxTimeoutSeconds
+		}
+	}
+	return result
 }
 
 type response struct {

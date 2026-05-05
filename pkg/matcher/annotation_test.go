@@ -143,53 +143,64 @@ func TestMatchTargetBranch(t *testing.T) {
 
 func TestMatchComment(t *testing.T) {
 	tests := []struct {
-		name   string
-		annots map[string]string
-		evt    *provider.Event
-		want   CommentMatchResult
+		name        string
+		annots      map[string]string
+		evt         *provider.Event
+		wantStatus  int
+		wantPattern string
 	}{
 		{
 			"not applicable when absent",
 			map[string]string{},
 			&provider.Event{TriggerType: provider.TriggerIssueComment, CommentBody: "/hello"},
-			CommentNotApplicable,
+			commentNotApplicable,
+			"",
 		},
 		{
 			"not matched on non-comment event",
 			map[string]string{keys.OnComment: "/hello"},
 			&provider.Event{TriggerType: provider.TriggerPush},
-			CommentNotMatched,
+			commentNotMatched,
+			"",
 		},
 		{
 			"matched regex",
 			map[string]string{keys.OnComment: "/hello"},
 			&provider.Event{TriggerType: provider.TriggerIssueComment, CommentBody: "/hello world"},
-			CommentMatched,
+			commentMatched,
+			"/hello",
 		},
 		{
 			"anchored regex no match",
 			map[string]string{keys.OnComment: "^/hello$"},
 			&provider.Event{TriggerType: provider.TriggerIssueComment, CommentBody: "/hello world"},
-			CommentNotMatched,
+			commentNotMatched,
+			"",
 		},
 		{
 			"anchored regex match",
 			map[string]string{keys.OnComment: "^/hello$"},
 			&provider.Event{TriggerType: provider.TriggerIssueComment, CommentBody: "/hello"},
-			CommentMatched,
+			commentMatched,
+			"^/hello$",
 		},
 		{
 			"array any match",
 			map[string]string{keys.OnComment: "[/hello, /assign]"},
 			&provider.Event{TriggerType: provider.TriggerIssueComment, CommentBody: "/assign me"},
-			CommentMatched,
+			commentMatched,
+			"/assign",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := matchComment(tt.annots, tt.evt); got != tt.want {
-				t.Errorf("matchComment() = %v, want %v", got, tt.want)
+			got := matchComment(tt.annots, tt.evt)
+			if got.status != tt.wantStatus {
+				t.Errorf("matchComment().status = %v, want %v", got.status, tt.wantStatus)
+			}
+			if got.pattern != tt.wantPattern {
+				t.Errorf("matchComment().pattern = %q, want %q", got.pattern, tt.wantPattern)
 			}
 		})
 	}
