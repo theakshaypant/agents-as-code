@@ -2,9 +2,9 @@
 
 ## Core Concepts
 
-**Agent** — a user-defined YAML template in `.tekton/agents/` describing what the agent does, which git events trigger it, and which tools it uses. The `system_prompt` field is the agent's core identity and behavioral instructions. Agents select MCP servers from the Repository's catalog and can scope their tool access with an allowlist.
+**Agent** — a user-defined YAML template in `.tekton/agents/` describing what the agent does, which git events trigger it, and which tools it uses. The `system_prompt` field is the agent's core identity and behavioral instructions — it supports `{{ variable_name }}` template variables that get resolved with event and PR/issue context at AgentRun creation time. Agents select MCP servers from the Repository's catalog and can scope their tool access with an allowlist.
 
-**AgentRun** — an execution instance spawned per git event. Contains a resolved snapshot of the Agent definition (system prompt, instructions, tools) plus enriched event context (PR details, comment body, labels, changed files). Every AgentRun executes in an isolated sandbox (K8s SIG Agent Sandbox). Tracks what the agent did (comments posted, commits pushed, PRs created) for audit.
+**AgentRun** — an execution instance spawned per git event. Contains a resolved snapshot of the Agent definition — template variables in the system prompt are substituted with actual values (PR diff, issue body, comment args, etc.) before the AgentRun is created. Includes enriched event context (PR details, comment body, labels, changed files). Every AgentRun executes in an isolated sandbox (K8s SIG Agent Sandbox). Tracks what the agent did (comments posted, commits pushed, PRs created) for audit.
 
 All triggers are git events. Agents interact with the outside world exclusively through git primitives (PR comments, commits, status checks, labels), which re-enter AAC as new events — enabling agent chaining without special inter-agent protocols.
 
@@ -25,7 +25,7 @@ Repository CR lookup (match webhook repo URL to CR)
 Agent Controller (match event to .tekton/agents/*.yaml definitions)
     |
     v
-AgentRun creation (resolved instructions + tools + event context)
+AgentRun creation (resolve template variables + instructions + tools + event context)
     |
     v
 Sandbox creation (K8s SIG Agent Sandbox, from SandboxTemplate on Repository CR)
@@ -124,7 +124,9 @@ spec:
 
 Agent definitions live in the repository under `.tekton/agents/`. They are version-controlled, reviewable in PRs, and scoped to the repo — not Kubernetes CRDs.
 
-Agents declare a `system_prompt` — the agent's core identity and behavioral instructions describing what the agent does. Agents select tools from the Repository's MCP server catalog and can scope access with an allowlist. Instructions (additional context files) are referenced via annotations pointing to repo-relative paths or remote URLs.
+Agents declare a `system_prompt` — the agent's core identity and behavioral instructions describing what the agent does. The system prompt supports `{{ variable_name }}` template variables that are resolved with event metadata, PR/issue context, and provider API data at AgentRun creation time (see [Template Variables](#template-variables)).
+
+Agents select tools from the Repository's MCP server catalog and can scope access with an allowlist. Instructions (additional context files) are referenced via annotations pointing to repo-relative paths or remote URLs.
 
 ```yaml
 apiVersion: agent.tekton.dev/v1alpha1
@@ -135,7 +137,12 @@ metadata:
     agent.tekton.dev/on-event: "issue_comment"
     agent.tekton.dev/on-comment: "/assign|/implement"
 spec:
-  system_prompt: "Implement code changes for assigned issues"
+  system_prompt: |
+    You are a coding agent for {{ repo_owner }}/{{ repo_name }}.
+    The user said: {{ trigger_comment_args }}
+
+    The repo is cloned at {{ repo_clone_path }}.
+    Implement the requested changes and create a pull request.
   tools:
     mcp_servers:
       - github
@@ -159,8 +166,11 @@ metadata:
     agent.tekton.dev/instruction: ".tekton/agents/review-standards.md"
 spec:
   system_prompt: |
-    Review pull requests for bugs, security issues, and style.
-    Provide actionable feedback as a PR review.
+    Review PR #{{ pull_request_number }} ("{{ pull_request_title }}") for bugs,
+    security issues, and style. {{ trigger_comment_args }}
+
+    Here is the diff:
+    {{ pull_request_diff }}
   tools:
     mcp_servers:
       - github
@@ -201,6 +211,65 @@ Supported sources:
 - Repo-relative paths (resolved from the repo's default branch)
 - Remote HTTP(S) URLs (fetched at AgentRun creation time)
 
+### Template Variables
+
+Agent system prompts support `{{ variable_name }}` template variables that are resolved at AgentRun creation time. Variables use the PaC-style `{{ }}` syntax with flat names (no nesting, no CEL expressions).
+
+**Resolution flow:**
+1. Adapter extracts all `{{ variable_name }}` references from the agent's `system_prompt`
+2. Metadata variables (from the event struct) are resolved immediately — these are free
+3. Provider variables (requiring GitHub API calls) are fetched lazily — only if actually referenced in the template
+4. Provider API results are cached per variable name to avoid duplicate calls
+5. Unresolvable variables are replaced with an empty string and a warning is logged
+
+**Variable categories:**
+
+| Variable | Source | Description |
+|----------|--------|-------------|
+| `repo_url` | event | Repository HTML URL |
+| `repo_name` | event | Repository name |
+| `repo_owner` | event | Repository owner/organization |
+| `default_branch` | event | Default branch name |
+| `event_type` | event | Trigger type (`push`, `pull_request`, etc.) |
+| `sender` | event | User who triggered the event |
+| `sha` | event | Head commit SHA |
+| `branch` | event | Target/base branch |
+| `comment_body` | event | Full comment body (for comment events) |
+| `repo_clone_path` | constant | Path where repo is cloned in sandbox (`/workspace/repo`) |
+| `pull_request_number` | event | PR number |
+| `pull_request_title` | event | PR title |
+| `pull_request_author` | event | PR author login |
+| `pull_request_url` | event | PR HTML URL |
+| `pull_request_head_sha` | event | Head SHA of the PR branch |
+| `issue_number` | event | Issue/PR number (alias for `pull_request_number`) |
+| `issue_labels` | event/provider | Comma-separated label names |
+| `trigger_comment_args` | event | Comment text after the matched `on-comment` pattern (e.g., `/review focus on security` → `focus on security`) |
+| `pull_request_description` | provider API | PR body/description |
+| `pull_request_diff` | provider API | Full PR diff |
+| `pull_request_reviews` | provider API | PR reviews formatted as `@user (STATE): body` |
+| `pull_request_comments` | provider API | PR/issue comments formatted as `@user: body` |
+| `pull_request_files` | provider API | Changed file paths, one per line |
+| `issue_title` | provider API | Issue title |
+| `issue_body` | provider API | Issue body |
+| `issue_comments` | provider API | Issue comments formatted as `@user: body` |
+
+**Example — review agent with PR context:**
+```yaml
+spec:
+  system_prompt: |
+    Review PR #{{ pull_request_number }} by @{{ pull_request_author }}.
+    Focus area: {{ trigger_comment_args }}
+
+    ## Changed files
+    {{ pull_request_files }}
+
+    ## Diff
+    {{ pull_request_diff }}
+
+    ## Existing reviews
+    {{ pull_request_reviews }}
+```
+
 ### AgentRun CR
 
 Created automatically by the Agent Controller when a matching git event arrives. Not authored by users.
@@ -220,7 +289,12 @@ metadata:
 spec:
   agent_ref: coding-agent
   repository_ref: my-repo
-  system_prompt: "Implement code changes for assigned issues"
+  system_prompt: |
+    You are a coding agent for org/my-repo.
+    The user said: implement the new API endpoint
+
+    The repo is cloned at /workspace/repo.
+    Implement the requested changes and create a pull request.
   instructions:
     - name: CLAUDE.md
       path: CLAUDE.md
@@ -270,7 +344,7 @@ status:
       sha: def456a
 ```
 
-- `system_prompt` is the agent's instructions, copied from the Agent definition
+- `system_prompt` is the agent's instructions with all `{{ variable_name }}` template variables resolved — contains the final prompt, not the raw template
 - `instructions` references resolved instruction files (repo paths or remote URLs)
 - `tools` is the resolved MCP server selection and tool allowlist
 - `event` contains enriched event context (PR details, comment body, labels, changed files)
@@ -308,7 +382,7 @@ The API has a clear separation of concerns:
 │                                                         │
 │  "What the agent SHOULD do"                             │
 └──────────────────────┬──────────────────────────────────┘
-                       │ adapter snapshots into AgentRun
+                       │ adapter resolves templates + snapshots into AgentRun
                        │
 ┌──────────────────────▼──────────────────────────────────┐
 │  AgentRun CR (runtime)                                  │
@@ -390,6 +464,7 @@ Agents cannot: modify Kubernetes resources, access other repos, or trigger non-g
 10. **LLM config on Repository CR, not on agents** — avoids secret sprawl, agents stay declarative
 11. **Annotation-based triggers** — trigger matching uses `metadata.annotations` with PaC-style semantics, not structured spec fields
 12. **Explicit instructions** — no auto-discovery of well-known files; developers opt-in via instruction annotations
+13. **Template variables are flat and lazy** — `{{ variable_name }}` with no nesting or CEL; provider API calls only happen for variables actually referenced in the template
 
 ## Open Questions
 

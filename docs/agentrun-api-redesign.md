@@ -10,11 +10,11 @@
 | 1d | Security Policy | Deferred (see [deferred-decisions.md](deferred-decisions.md)) |
 | 2 | Agent Definition redesign | Types implemented |
 | 3 | AgentRun redesign | Types implemented |
-| 4 | Template Variables | Design complete, not started |
+| 4 | Template Variables | Implemented |
 | 5 | Result Hooks | Design complete, not started |
-| 6 | Execution Model | Design complete, not started |
-| — | Adapter/controller logic | Not started |
-| — | Provider event enrichment | Not started |
+| 6 | Execution Model | Types implemented |
+| — | Adapter/controller logic | Template resolution + AgentRun creation implemented |
+| — | Provider event enrichment | PR + issue data fetching implemented |
 
 **Convention deviation**: All JSON tags use `snake_case` instead of the `camelCase` shown in this design doc. This was a deliberate project-wide convention decision applied during implementation.
 
@@ -546,6 +546,9 @@ This lets agents work without any MCP tools for reading — the controller fetch
 | Event | `branch` | Target branch | None (from event) |
 | PR | `pull_request_number` | PR number | None (from event) |
 | PR | `pull_request_title` | PR title | None (from event) |
+| PR | `pull_request_author` | Who opened the PR | None (from event) |
+| PR | `pull_request_url` | Direct URL to the PR | None (from event) |
+| PR | `pull_request_head_sha` | HEAD SHA of the PR branch | None (from event) |
 | PR | `pull_request_description` | PR body/description | Fetch from provider API |
 | PR | `pull_request_diff` | Full PR diff | Fetch from provider API |
 | PR | `pull_request_files` | List of changed files | Fetch from provider API |
@@ -557,6 +560,7 @@ This lets agents work without any MCP tools for reading — the controller fetch
 | Issue | `issue_comments` | Issue comment thread | Fetch from provider API |
 | Issue | `issue_labels` | Labels on the issue | Fetch from provider API |
 | Comment | `comment_body` | Triggering comment text | None (from event) |
+| Comment | `trigger_comment_args` | Comment text after the matched command | None (extracted from comment) |
 | Sandbox | `repo_clone_path` | Path to cloned repo in sandbox | Clone repo into sandbox |
 
 ### Resolution
@@ -943,13 +947,19 @@ spec:
 - `config/300-agentrun.yaml` — regenerate CRD
 - `pkg/matcher/parse.go` — update validation for system_prompt, snake_case limits
 
-### To do (types — done)
+### Done (types — Part 6)
 - `pkg/apis/agent/v1alpha1/types.go` — add `RuntimeConfig` to `Settings`
 - `config/300-repository.yaml` — regenerate CRD
 
+### Done (Part 4 — template variables)
+- `pkg/template/resolver.go` — template variable parser and resolver (`ExtractVariables`, `ResolveVariables`)
+- `pkg/template/variables.go` — `VariableResolver` builds variable map from event + provider API (lazy fetch, cached)
+- `pkg/provider/interface.go` — add 8 provider methods for PR/issue data fetching
+- `pkg/provider/github/github.go` — implement PR diff, description, reviews, comments, issue title/body/comments/labels + implement `GetFiles`
+- `pkg/adapter/adapter.go` — template resolution, AgentRun creation, `buildEventInfo`, `resolveLimits`
+
 ### To do (code)
-- `pkg/adapter/adapter.go` — resolve template variables, instruction annotations, enriched event, limits
-- `pkg/provider/github/parse.go` — extract PR number, comment body, labels, changed files into event
+- `pkg/adapter/adapter.go` — resolve instruction annotations (instruction-N annotation content fetching)
 - `pkg/reconciler/agentrun/reconciler.go` — AgentRun reconciler (sandbox creation, result collection, action execution)
 
 ### Deleted

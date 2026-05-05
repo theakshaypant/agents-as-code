@@ -68,23 +68,29 @@ Decisions and improvements explicitly deferred during the API redesign. Tracked 
 
 ---
 
-## Template Variables (Part 4 — designed, not started)
+## Template Variables (Part 4 — implemented)
 
-PaC-style template variables (`{{ variable_name }}`) in system prompts and instruction files. The adapter resolves variables at AgentRun creation time by fetching data from the provider API and substituting it into the prompt. See the [redesign doc](agentrun-api-redesign.md) for the full variable list and design.
+PaC-style template variables (`{{ variable_name }}`) in system prompts. The adapter resolves variables at AgentRun creation time by fetching data from the provider API and substituting it into the prompt. See the [redesign doc](agentrun-api-redesign.md) for the full variable list and design.
 
 Variables serve a dual purpose: data injection (resolved value goes into the prompt) and sandbox signaling (controller infers what to provision — e.g. `{{ repo_clone_path }}` triggers a repo clone, `{{ pull_request_diff }}` triggers a diff fetch).
 
-### Items to implement
+### Decisions made
 
-- **Variable parser**: Scan system_prompt and instruction content for `{{ ... }}` patterns. Need to decide on exact syntax — Go's `text/template`, simple regex substitution, or a custom parser. Go templates are powerful but potentially dangerous (arbitrary function calls); simple regex substitution is safer and sufficient.
+- **Variable parser**: Simple regex substitution (`{{([^}]{2,})}}`, same as PaC). No CEL, no Go `text/template`. Flat variable name lookup only.
 
-- **Provider API integration**: Variables like `pull_request_diff`, `pull_request_reviews`, `issue_comments` require provider API calls that don't exist on the `provider.Interface` yet. Need to add methods like `GetPullRequestDiff`, `GetPullRequestReviews`, `GetIssueComments`.
+- **Provider API integration**: 8 new methods on `provider.Interface` (`GetPullRequestDescription`, `GetPullRequestDiff`, `GetPullRequestReviews`, `GetPullRequestComments`, `GetIssueTitle`, `GetIssueBody`, `GetIssueComments`, `GetIssueLabels`). GitHub provider implemented with go-github v84.
 
-- **Size limits**: `{{ pull_request_diff }}` on a large PR could produce megabytes of text. Need truncation strategy — either a token budget per variable, or let the model's context window be the natural limit and document that large diffs may be truncated.
+- **Size limits**: No truncation. Let the model's context window be the natural limit.
 
-- **Error handling**: What happens when a variable can't be resolved (e.g. `{{ pull_request_diff }}` on a push event)? Options: empty string, error string, fail AgentRun creation. Empty string with a log warning is probably the right default.
+- **Error handling**: Empty string + log warning for unresolvable variables. Agent still runs.
 
-- **Caching**: Multiple variables may trigger the same API call (e.g. `pull_request_title` and `pull_request_description` both come from the PR object). The resolver should fetch once and extract multiple fields.
+- **Caching**: `VariableResolver` caches provider API results per variable name. Lazy fetching — only calls provider methods for variables actually present in the template.
+
+### Items deferred
+
+- **Instruction content resolution**: Template variables in instruction file content (from `agent.tekton.dev/instruction-N` annotations) are not yet resolved — instruction fetching itself is not implemented yet.
+
+- **Sandbox signaling**: The controller does not yet infer sandbox provisioning from variable usage (e.g. `{{ repo_clone_path }}` should trigger a repo clone). This belongs in the AgentRun reconciler.
 
 ---
 
