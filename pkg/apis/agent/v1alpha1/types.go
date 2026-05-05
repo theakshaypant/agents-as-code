@@ -15,7 +15,6 @@ import (
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,shortName=repo
 // +kubebuilder:printcolumn:name="URL",type=string,JSONPath=`.spec.url`
-// +kubebuilder:printcolumn:name="KG",type=boolean,JSONPath=`.spec.knowledge_graph.enabled`
 type Repository struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata"`
@@ -56,6 +55,22 @@ type Settings struct {
 	// Network configures network policy for agent sandboxes.
 	// +optional
 	Network *NetworkPolicy `json:"network,omitempty"`
+
+	// Runtime configures the sandbox environment for agent execution.
+	// +optional
+	Runtime *RuntimeConfig `json:"runtime,omitempty"`
+}
+
+type RuntimeConfig struct {
+	// SandboxTemplate is the name of the SandboxTemplate CR used to create
+	// agent execution environments. The template defines the container image,
+	// resource limits, and base configuration for sandboxes.
+	// +kubebuilder:validation:Required
+	SandboxTemplate string `json:"sandbox_template"`
+
+	// ServiceAccountName is the K8s service account for sandbox Pods.
+	// +optional
+	ServiceAccountName string `json:"service_account_name,omitempty"`
 }
 
 type MCPServerSpec struct {

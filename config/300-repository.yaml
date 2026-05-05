@@ -337,6 +337,21 @@ spec:
                       required:
                         - preset
                       type: object
+                    runtime:
+                      description: Runtime configures the sandbox environment for agent execution.
+                      properties:
+                        sandbox_template:
+                          description: |-
+                            SandboxTemplate is the name of the SandboxTemplate CR used to create
+                            agent execution environments. The template defines the container image,
+                            resource limits, and base configuration for sandboxes.
+                          type: string
+                        service_account_name:
+                          description: ServiceAccountName is the K8s service account for sandbox Pods.
+                          type: string
+                      required:
+                        - sandbox_template
+                      type: object
                   type: object
                 url:
                   description: URL of the Git repository.

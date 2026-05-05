@@ -13,7 +13,6 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	agentv1alpha1 "github.com/theakshaypant/agents-as-code/pkg/apis/agent/v1alpha1"
-	"github.com/theakshaypant/agents-as-code/pkg/knowledgegraph/graphify"
 	repository "github.com/theakshaypant/agents-as-code/pkg/reconciler/repository"
 )
 
@@ -44,8 +43,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	builder := graphify.New("")
-	reconciler := repository.NewReconciler(mgr.GetClient(), builder)
+	reconciler := repository.NewReconciler(mgr.GetClient(), nil)
 	if err := reconciler.SetupWithManager(mgr); err != nil {
 		logger.Error(err, "unable to set up Repository controller")
 		os.Exit(1)

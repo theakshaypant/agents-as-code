@@ -19,10 +19,13 @@ type Reconciler struct {
 }
 
 func NewReconciler(c client.Client, builder knowledgegraph.Builder) *Reconciler {
-	return &Reconciler{
-		client:    c,
-		kgBuilder: builder,
+	r := &Reconciler{
+		client: c,
 	}
+	if builder != nil {
+		r.kgBuilder = builder
+	}
+	return r
 }
 
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
