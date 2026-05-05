@@ -10,7 +10,7 @@ Pipelines-as-Code (PaC) introduced AI/LLM-powered pipeline analysis as a tech pr
 
 PaC proposed an "AI Skills redesign" to move from a single-purpose failure analyzer to a skill-based platform. Skills are Markdown files in `.tekton/ai/` that define when to trigger, what context to assemble, what prompt to send, and where to post results. [Fullsend](https://github.com/fullsend-ai/fullsend) explored fully autonomous agentic development — agents with per-role GitHub App identities that handle triage, implementation, review, and merge, coordinating exclusively through GitHub primitives. Fullsend uses curated, human-written context (per-repo `CLAUDE.md`, bookmarks, org-level architecture docs) to give agents the understanding they need.
 
-Each approach brings a different context model. PaC skills let users specify exactly which diffs, logs, and files to include. Fullsend relies on carefully curated documentation that humans write and maintain to reflect the codebase. AAC adds a complementary layer: a knowledge graph of the entire repository — automatically derived from the code itself — that captures structural relationships (call graphs, type hierarchies, package boundaries, community clusters) and updates incrementally on every push.
+Each approach brings a different context model. PaC skills let users specify exactly which diffs, logs, and files to include. Fullsend relies on carefully curated documentation that humans write and maintain to reflect the codebase. AAC uses PaC-style template variables (`{{ pull_request_diff }}`, `{{ issue_comments }}`, etc.) to inject rich context into agent prompts, combined with MCP tools for direct API access when needed.
 
 AAC is designed to integrate with PaC, reusing its adapter, provider, and Repository CR infrastructure. PaC skills and AAC agents can coexist on the same repository — skills handle lightweight prompt-driven tasks (formatting pipeline output, generating descriptions), while AAC agents handle tasks that benefit from deeper structural context. AAC also builds on PaC's multi-provider foundation, supporting GitHub, GitLab, Bitbucket, and Gitea/Forgejo with multiple LLM providers — configured once on the Repository CR, shared by all agents.
 
@@ -18,11 +18,11 @@ AAC is designed to integrate with PaC, reusing its adapter, provider, and Reposi
 
 | | Qodo Merge | PaC AI Skills | Fullsend | AAC |
 |---|---|---|---|---|
-| Context model | Code diff | Code diff + pipeline logs | Human-curated docs | Knowledge graph (auto-derived) |
+| Context model | Code diff | Code diff + pipeline logs | Human-curated docs | Template variables + MCP tools |
 | Definition | SaaS config | Markdown in `.tekton/ai/` | Org-level config repo | YAML in `.tekton/agents/` |
 | Git providers | GitHub | GitHub, GitLab, Bitbucket, Gitea | GitHub | GitHub, GitLab, Bitbucket, Gitea |
 | LLM providers | Built-in | Configurable | Claude | Configurable |
-| Execution | SaaS | Inline in PaC process | Per-role GitHub App | Isolated sandbox per agent |
+| Execution | SaaS | Inline in PaC process | Per-role GitHub App | Isolated sandbox (K8s SIG Agent Sandbox) |
 | Audit | PR comments | PR comments | Git actions | AgentRun CR |
 | Strength | Zero setup, polished UX | Pipeline-aware, multi-provider | Full autonomy, security-first | Structural context, declarative |
 
@@ -77,4 +77,4 @@ Triggers are declared as annotations on Agent metadata, following PaC's annotati
 ## Documentation
 
 - [Getting Started](docs/getting-started.md) — deploy AAC locally with kind and test it end-to-end
-- [Design](docs/design.md) — architecture, CRDs, knowledge graph, and context filtering
+- [Design](docs/design.md) — architecture, CRDs, execution model, and trust model
