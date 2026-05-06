@@ -48,9 +48,205 @@ func (p *Provider) Validate(_ context.Context, evt *provider.Event) error {
 	return gh.ValidateSignature(signature, evt.Request.Payload, []byte(p.webhookSecret))
 }
 
-func (p *Provider) CreateComment(_ context.Context, _ *provider.Event, _ string) error {
-	// TODO: create or update PR comment via GitHub API
+func (p *Provider) CreateComment(ctx context.Context, evt *provider.Event, body string) (string, error) {
+	if p.client == nil {
+		return "", fmt.Errorf("github client not initialized")
+	}
+	if evt.PullRequestNumber == 0 {
+		return "", fmt.Errorf("no pull request number in event")
+	}
+
+	comment, _, err := p.client.Issues.CreateComment(
+		ctx, evt.Organization, evt.Repository, evt.PullRequestNumber,
+		&gh.IssueComment{Body: gh.Ptr(body)},
+	)
+	if err != nil {
+		return "", fmt.Errorf("creating comment: %w", err)
+	}
+	return comment.GetHTMLURL(), nil
+}
+
+func (p *Provider) CreateReview(ctx context.Context, evt *provider.Event, reviewEvent, body string, comments []provider.ReviewComment) (string, error) {
+	if p.client == nil {
+		return "", fmt.Errorf("github client not initialized")
+	}
+	if evt.PullRequestNumber == 0 {
+		return "", fmt.Errorf("no pull request number in event")
+	}
+
+	req := &gh.PullRequestReviewRequest{
+		Event: gh.Ptr(reviewEvent),
+	}
+	if body != "" {
+		req.Body = gh.Ptr(body)
+	}
+	if len(comments) > 0 {
+		drafts := make([]*gh.DraftReviewComment, 0, len(comments))
+		for _, c := range comments {
+			drafts = append(drafts, &gh.DraftReviewComment{
+				Path: gh.Ptr(c.Path),
+				Line: gh.Ptr(c.Line),
+				Side: gh.Ptr("RIGHT"),
+				Body: gh.Ptr(c.Body),
+			})
+		}
+		req.Comments = drafts
+	}
+
+	review, _, err := p.client.PullRequests.CreateReview(
+		ctx, evt.Organization, evt.Repository, evt.PullRequestNumber, req,
+	)
+	if err != nil {
+		return "", fmt.Errorf("creating review: %w", err)
+	}
+	return review.GetHTMLURL(), nil
+}
+
+func (p *Provider) AddLabels(ctx context.Context, evt *provider.Event, labels []string) error {
+	if p.client == nil {
+		return fmt.Errorf("github client not initialized")
+	}
+	if evt.PullRequestNumber == 0 {
+		return fmt.Errorf("no pull request number in event")
+	}
+
+	_, _, err := p.client.Issues.AddLabelsToIssue(
+		ctx, evt.Organization, evt.Repository, evt.PullRequestNumber, labels,
+	)
+	if err != nil {
+		return fmt.Errorf("adding labels: %w", err)
+	}
 	return nil
+}
+
+func (p *Provider) RemoveLabels(ctx context.Context, evt *provider.Event, labels []string) error {
+	if p.client == nil {
+		return fmt.Errorf("github client not initialized")
+	}
+	if evt.PullRequestNumber == 0 {
+		return fmt.Errorf("no pull request number in event")
+	}
+
+	for _, label := range labels {
+		_, err := p.client.Issues.RemoveLabelForIssue(
+			ctx, evt.Organization, evt.Repository, evt.PullRequestNumber, label,
+		)
+		if err != nil {
+			p.logger.Warnf("failed to remove label %q: %v", label, err)
+		}
+	}
+	return nil
+}
+
+func (p *Provider) CreatePullRequest(ctx context.Context, evt *provider.Event, title, body, head, base string) (string, error) {
+	if p.client == nil {
+		return "", fmt.Errorf("github client not initialized")
+	}
+
+	newPR := &gh.NewPullRequest{
+		Title: gh.Ptr(title),
+		Head:  gh.Ptr(head),
+		Base:  gh.Ptr(base),
+	}
+	if body != "" {
+		newPR.Body = gh.Ptr(body)
+	}
+
+	pr, _, err := p.client.PullRequests.Create(
+		ctx, evt.Organization, evt.Repository, newPR,
+	)
+	if err != nil {
+		return "", fmt.Errorf("creating pull request: %w", err)
+	}
+	return pr.GetHTMLURL(), nil
+}
+
+func (p *Provider) SetCommitStatus(ctx context.Context, evt *provider.Event, statusContext, state, description, targetURL string) error {
+	if p.client == nil {
+		return fmt.Errorf("github client not initialized")
+	}
+	if evt.SHA == "" {
+		return fmt.Errorf("no commit SHA in event")
+	}
+
+	repoStatus := gh.RepoStatus{
+		Context: gh.Ptr(statusContext),
+		State:   gh.Ptr(state),
+	}
+	if description != "" {
+		repoStatus.Description = gh.Ptr(description)
+	}
+	if targetURL != "" {
+		repoStatus.TargetURL = gh.Ptr(targetURL)
+	}
+
+	_, _, err := p.client.Repositories.CreateStatus(
+		ctx, evt.Organization, evt.Repository, evt.SHA, repoStatus,
+	)
+	if err != nil {
+		return fmt.Errorf("setting commit status: %w", err)
+	}
+	return nil
+}
+
+func (p *Provider) CreateCommit(ctx context.Context, evt *provider.Event, message string, files map[string]string) (string, error) {
+	if p.client == nil {
+		return "", fmt.Errorf("github client not initialized")
+	}
+	if evt.HeadBranch == "" {
+		return "", fmt.Errorf("no head branch in event")
+	}
+
+	ref, _, err := p.client.Git.GetRef(ctx, evt.Organization, evt.Repository, "refs/heads/"+evt.HeadBranch)
+	if err != nil {
+		return "", fmt.Errorf("getting ref for branch %q: %w", evt.HeadBranch, err)
+	}
+	baseCommitSHA := ref.GetObject().GetSHA()
+
+	baseCommit, _, err := p.client.Git.GetCommit(ctx, evt.Organization, evt.Repository, baseCommitSHA)
+	if err != nil {
+		return "", fmt.Errorf("getting base commit: %w", err)
+	}
+	baseTreeSHA := baseCommit.GetTree().GetSHA()
+
+	var entries []*gh.TreeEntry
+	for path, content := range files {
+		blob, _, err := p.client.Git.CreateBlob(ctx, evt.Organization, evt.Repository, gh.Blob{
+			Content:  gh.Ptr(content),
+			Encoding: gh.Ptr("utf-8"),
+		})
+		if err != nil {
+			return "", fmt.Errorf("creating blob for %q: %w", path, err)
+		}
+		entries = append(entries, &gh.TreeEntry{
+			Path: gh.Ptr(path),
+			Mode: gh.Ptr("100644"),
+			Type: gh.Ptr("blob"),
+			SHA:  blob.SHA,
+		})
+	}
+
+	tree, _, err := p.client.Git.CreateTree(ctx, evt.Organization, evt.Repository, baseTreeSHA, entries)
+	if err != nil {
+		return "", fmt.Errorf("creating tree: %w", err)
+	}
+
+	commit, _, err := p.client.Git.CreateCommit(ctx, evt.Organization, evt.Repository, gh.Commit{
+		Message: gh.Ptr(message),
+		Tree:    tree,
+		Parents: []*gh.Commit{{SHA: gh.Ptr(baseCommitSHA)}},
+	}, nil)
+	if err != nil {
+		return "", fmt.Errorf("creating commit: %w", err)
+	}
+
+	_, _, err = p.client.Git.UpdateRef(ctx, evt.Organization, evt.Repository,
+		"refs/heads/"+evt.HeadBranch, gh.UpdateRef{SHA: commit.GetSHA(), Force: gh.Ptr(false)})
+	if err != nil {
+		return "", fmt.Errorf("updating ref for branch %q: %w", evt.HeadBranch, err)
+	}
+
+	return commit.GetSHA(), nil
 }
 
 func (p *Provider) GetAgentDir(ctx context.Context, evt *provider.Event, path string) (string, error) {
