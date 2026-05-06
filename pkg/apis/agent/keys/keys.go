@@ -8,6 +8,8 @@ const (
 	OnComment      = agent.GroupName + "/on-comment"
 	OnPathChange   = agent.GroupName + "/on-path-change"
 	OnLabel        = agent.GroupName + "/on-label"
+
+	ResultHooks = agent.GroupName + "/result-hooks"
 )
 
 var AllTriggerAnnotations = []string{

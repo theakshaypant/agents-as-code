@@ -14,6 +14,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	agentv1alpha1 "github.com/theakshaypant/agents-as-code/pkg/apis/agent/v1alpha1"
+	"github.com/theakshaypant/agents-as-code/pkg/apis/agent/keys"
 	"github.com/theakshaypant/agents-as-code/pkg/matcher"
 	"github.com/theakshaypant/agents-as-code/pkg/provider"
 	"github.com/theakshaypant/agents-as-code/pkg/template"
@@ -268,6 +269,13 @@ func (a *Adapter) processEvent(ctx context.Context, evt *provider.Event, prov pr
 		vars := resolver.Resolve(ctx, needed)
 		resolvedPrompt := template.ResolveVariables(m.Agent.Spec.SystemPrompt, vars, logger)
 
+		var instructions []agentv1alpha1.InstructionRef
+		if m.Agent.GetAnnotations()[keys.ResultHooks] == "true" {
+			instructions = append(instructions, agentv1alpha1.InstructionRef{
+				Name: "result-hooks-format",
+			})
+		}
+
 		agentRun := &agentv1alpha1.AgentRun{
 			ObjectMeta: metav1.ObjectMeta{
 				GenerateName: m.Agent.Name + "-",
@@ -278,6 +286,7 @@ func (a *Adapter) processEvent(ctx context.Context, evt *provider.Event, prov pr
 				AgentRef:      m.Agent.Name,
 				RepositoryRef: repo.Name,
 				SystemPrompt:  resolvedPrompt,
+				Instructions:  instructions,
 				Tools:         m.Agent.Spec.Tools,
 				Event:         buildEventInfo(evt),
 				Limits:        resolveLimits(m.Agent.Spec.Limits, repo.Spec.Settings),
