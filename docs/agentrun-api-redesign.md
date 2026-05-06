@@ -11,7 +11,7 @@
 | 2 | Agent Definition redesign | Types implemented |
 | 3 | AgentRun redesign | Types implemented |
 | 4 | Template Variables | Implemented |
-| 5 | Result Hooks | Design complete, not started |
+| 5 | Result Hooks | Implemented |
 | 6 | Execution Model | Types implemented |
 | — | Adapter/controller logic | Template resolution + AgentRun creation implemented |
 | — | Provider event enrichment | PR + issue data fetching implemented |
@@ -638,6 +638,7 @@ Result hooks are useful when:
 | `label` | Label names to add/remove | Update labels via provider API |
 | `create-pr` | PR title, body, branch | Create pull request via provider API |
 | `status` | Status check name + state | Set commit status via provider API |
+| `commit` | Commit message + file path→content map | Create atomic multi-file commit on PR head branch via Git Data API |
 
 ### Example: Zero-MCP Reviewer
 
@@ -650,26 +651,18 @@ metadata:
   annotations:
     agent.tekton.dev/on-event: "pull_request"
     agent.tekton.dev/on-target-branch: "main"
+    agent.tekton.dev/result-hooks: "true"
 spec:
   system_prompt: |
-    Review this pull request:
+    Review this pull request for bugs, security issues, and performance.
 
     {{ pull_request_diff }}
-
-    Respond with a JSON object:
-    {
-      "review": {
-        "body": "overall review summary",
-        "event": "APPROVE" | "REQUEST_CHANGES" | "COMMENT",
-        "comments": [{"path": "file.go", "line": 10, "body": "issue here"}]
-      }
-    }
   limits:
     max_tokens: 50000
     timeout_seconds: 300
 ```
 
-The controller parses the agent's structured output and posts the review using the git provider credentials from the Repository CR. The agent never had a GitHub token.
+The `result-hooks` annotation auto-injects a built-in instruction that teaches the agent the structured JSON output format (`/output/result.json`). The controller parses the agent's output and posts the review using the git provider credentials from the Repository CR. The agent never had a GitHub token.
 
 ---
 
@@ -901,20 +894,21 @@ metadata:
   name: labeler
   annotations:
     agent.tekton.dev/on-event: "pull_request"
+    agent.tekton.dev/result-hooks: "true"
 spec:
   system_prompt: |
     Categorize this PR by reading its title and description.
+    Add the appropriate label(s).
 
     Title: {{ pull_request_title }}
     Description: {{ pull_request_description }}
     Changed files: {{ pull_request_files }}
-
-    Respond with a JSON object:
-    {"actions": [{"type": "label", "add": ["<category>"]}]}
   limits:
     max_tokens: 4000
     timeout_seconds: 60
 ```
+
+The `result-hooks` annotation auto-injects an instruction file that teaches the agent the structured JSON output format. The agent no longer needs to hardcode the schema in its system prompt.
 
 ---
 
@@ -957,6 +951,17 @@ spec:
 - `pkg/provider/interface.go` — add 8 provider methods for PR/issue data fetching
 - `pkg/provider/github/github.go` — implement PR diff, description, reviews, comments, issue title/body/comments/labels + implement `GetFiles`
 - `pkg/adapter/adapter.go` — template resolution, AgentRun creation, `buildEventInfo`, `resolveLimits`
+
+### Done (Part 5 — result hooks)
+- `pkg/result/types.go` — `Result`, `Action`, `ReviewComment` types matching agent output schema
+- `pkg/result/parser.go` — `Parse()` + `Validate()` with type-specific validation for all 5 hook types
+- `pkg/result/executor.go` — `Executor` calls provider write methods, returns `[]AgentAction` audit trail (partial success model)
+- `pkg/result/instruction.md` — embedded instruction file teaching agents the result hooks JSON format
+- `pkg/result/instruction.go` — Go embed + `Instruction()` function for the built-in instruction content
+- `pkg/provider/interface.go` — add 6 write methods (`CreateComment`, `CreateReview`, `AddLabels`, `RemoveLabels`, `CreatePullRequest`, `SetCommitStatus`) + `ReviewComment` type
+- `pkg/provider/github/github.go` — implement all 6 write methods using go-github v84
+- `pkg/apis/agent/keys/keys.go` — add `ResultHooks` annotation key
+- `pkg/adapter/adapter.go` — inject result hooks instruction when annotation is present
 
 ### To do (code)
 - `pkg/adapter/adapter.go` — resolve instruction annotations (instruction-N annotation content fetching)

@@ -198,6 +198,13 @@ Triggers are declared as annotations on Agent metadata using the `agent.tekton.d
 
 **Matching semantics:** `on-comment` is a separate matching track (checked first, bypasses other annotations when matched). For the standard path, all present annotations are AND'd — all must match. Within each annotation, array values are OR'd.
 
+**Behavior annotations:**
+
+| Annotation | Description |
+|------------|-------------|
+| `clone-repo` | Set to `"true"` to clone the repository into the sandbox at `/workspace/repo` |
+| `result-hooks` | Set to `"true"` to auto-inject the result hooks instruction — teaches the agent the structured JSON output format for `/output/result.json` |
+
 **Instruction annotations:**
 
 Instructions are loaded via PAC-style annotations. Developers explicitly opt-in to whatever instruction files they want — no auto-discovery of well-known files.
@@ -210,6 +217,7 @@ Instructions are loaded via PAC-style annotations. Developers explicitly opt-in 
 Supported sources:
 - Repo-relative paths (resolved from the repo's default branch)
 - Remote HTTP(S) URLs (fetched at AgentRun creation time)
+- Built-in instructions (auto-injected via behavior annotations like `result-hooks`)
 
 ### Template Variables
 
@@ -433,12 +441,19 @@ Agents that only need prompt context (labeler reading PR title, reviewer getting
 
 ### What Agents Can Do
 
-Agents produce structured results that the controller executes as git actions:
-- **Post PR/issue comments** — via provider API
-- **Submit PR reviews** — with per-file inline comments
-- **Add/remove labels** — via provider API
-- **Create PRs** — via provider API
-- **Set status checks** — via provider API
+Agents produce structured results (JSON at `/output/result.json`) that the controller executes as git actions via **result hooks**:
+
+| Hook | Agent output | Controller action |
+|------|-------------|-------------------|
+| `comment` | Comment body text | Post as PR/issue comment |
+| `review` | Review body + per-file inline comments | Submit PR review (COMMENT, APPROVE, REQUEST_CHANGES) |
+| `label` | Label names to add/remove | Update labels |
+| `create-pr` | PR title, body, head branch, base branch | Create pull request |
+| `status` | Context name, state, description | Set commit status check |
+
+Result hooks are controller-mediated — the agent never sees the git provider token. The controller reads the result, validates it, executes each action via the provider API using Repository CR credentials, and records audit entries in `AgentRunStatus.Actions`.
+
+The executor uses a **partial success model**: if one action fails, it continues executing the remaining actions and returns both the successful audit records and aggregated errors.
 
 Agents can also perform actions directly via MCP tools (e.g. GitHub MCP server with a token). The controller records all actions in `AgentRunStatus.Actions` for audit.
 
@@ -465,6 +480,7 @@ Agents cannot: modify Kubernetes resources, access other repos, or trigger non-g
 11. **Annotation-based triggers** — trigger matching uses `metadata.annotations` with PaC-style semantics, not structured spec fields
 12. **Explicit instructions** — no auto-discovery of well-known files; developers opt-in via instruction annotations
 13. **Template variables are flat and lazy** — `{{ variable_name }}` with no nesting or CEL; provider API calls only happen for variables actually referenced in the template
+14. **Result hooks are controller-mediated** — agents write structured JSON, controller executes git actions using Repository CR credentials; agent never sees the token
 
 ## Open Questions
 
@@ -479,3 +495,6 @@ Agent-to-agent chaining (e.g., reviewer agent posts a comment that triggers a co
 
 ### Security Policy
 Deferred for MVP. See [Deferred Decisions](deferred-decisions.md) for the full analysis of why git security policy needs more design work (MCP-mediated vs controller-mediated git operations).
+
+### Sandbox Tool Installation
+Allow agents to declare CLI tools or packages to install in the sandbox before execution (e.g. linters, language runtimes, custom binaries) — either via agent annotations or a `tools.install` field in the SandboxTemplate.

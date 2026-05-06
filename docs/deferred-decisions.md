@@ -94,23 +94,24 @@ Variables serve a dual purpose: data injection (resolved value goes into the pro
 
 ---
 
-## Result Hooks (Part 5 — designed, not started)
+## Result Hooks (Part 5 — implemented)
 
 Controller-mediated actions that let agents produce structured output without needing direct MCP tool access to the git provider. The agent writes its intent as structured data; the controller executes it using the Repository CR's git provider credentials. See the [redesign doc](agentrun-api-redesign.md) for the full design.
 
 This is the complement to template variables: variables handle the read path (controller fetches context for the agent), result hooks handle the write path (controller acts on agent output). Together, they enable a fully functional agent with zero MCP tools.
 
-### Items to implement
+### Decisions made
 
-- **Result format**: The current `agentharness.Result` struct has `Comment`, `PRTitle`, `PRBody`. This needs to be expanded to support reviews (with per-file comments), labels, status checks. Need to define a structured JSON schema the agent outputs.
+- **Result format**: `pkg/result/types.go` defines `Result` with an `Actions` array. Each action has a `type` field (comment, review, label, create-pr, status) and type-specific fields. The agent writes this as JSON to `/output/result.json`.
+- **All 5 hook types implemented**: comment (post PR/issue comment), review (submit PR review with inline comments), label (add/remove), create-pr (create new PR), status (set commit status check).
+- **Partial success model**: Executor continues executing remaining actions if one fails. Returns both successful audit records and aggregated errors. Reconciler decides how to handle partial failure.
+- **Validation upfront**: `result.Validate()` checks all actions before execution — catches malformed output before any API calls.
+- **Provider write methods**: 6 new methods on `provider.Interface` with full GitHub implementation: `CreateComment` (returns URL), `CreateReview`, `AddLabels`, `RemoveLabels`, `CreatePullRequest`, `SetCommitStatus`.
 
-- **Result collection**: The runtime writes to `/output/result.json`. The controller reads this file after Pod completion. Need to handle the case where the runtime crashes before writing the result file.
+### Items deferred
 
-- **Multiple actions per result**: An agent might want to post a comment AND add a label AND set a status check in one run. The result format should support a list of actions.
-
-- **Partial failure**: If posting a comment succeeds but adding a label fails, how is this reported in AgentRunStatus? Each action should have its own success/failure status.
-
-- **Interaction with MCP tools**: An agent could have both MCP tools and result hooks. The controller should not duplicate actions the agent already performed via MCP. May need to track which actions came from which path in `AgentRunStatus.Actions`.
+- **MCP deduplication**: An agent with both MCP tools and result hooks could duplicate actions. Tracking which actions came from which path needs design work.
+- **Result collection failure**: If the runtime crashes before writing `/output/result.json`, the reconciler needs to detect this and mark the AgentRun as failed. This is a reconciler concern, not a result-hooks concern.
 
 ---
 
