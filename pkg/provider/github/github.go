@@ -249,6 +249,46 @@ func (p *Provider) CreateCommit(ctx context.Context, evt *provider.Event, messag
 	return commit.GetSHA(), nil
 }
 
+func (p *Provider) GetFile(ctx context.Context, evt *provider.Event, path string) (string, error) {
+	if p.client == nil {
+		return "", fmt.Errorf("github client not initialized")
+	}
+
+	revision := evt.DefaultBranch
+
+	rootTree, _, err := p.client.Git.GetTree(ctx, evt.Organization, evt.Repository, revision, true)
+	if err != nil {
+		return "", fmt.Errorf("fetching root tree: %w", err)
+	}
+
+	var blobSHA string
+	for _, entry := range rootTree.Entries {
+		if entry.GetPath() == path && entry.GetType() == "blob" {
+			blobSHA = entry.GetSHA()
+			break
+		}
+	}
+	if blobSHA == "" {
+		return "", fmt.Errorf("file %q not found in %s", path, revision)
+	}
+
+	blob, _, err := p.client.Git.GetBlob(ctx, evt.Organization, evt.Repository, blobSHA)
+	if err != nil {
+		return "", fmt.Errorf("fetching blob for %q: %w", path, err)
+	}
+
+	content := blob.GetContent()
+	if blob.GetEncoding() == "base64" {
+		decoded, err := base64.StdEncoding.DecodeString(content)
+		if err != nil {
+			return "", fmt.Errorf("decoding blob for %q: %w", path, err)
+		}
+		content = string(decoded)
+	}
+
+	return content, nil
+}
+
 func (p *Provider) GetAgentDir(ctx context.Context, evt *provider.Event, path string) (string, error) {
 	if p.client == nil {
 		return "", fmt.Errorf("github client not initialized")

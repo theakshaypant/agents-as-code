@@ -20,6 +20,7 @@ type Interface interface {
 	Validate(ctx context.Context, event *Event) error
 	SetClient(ctx context.Context, event *Event, token, webhookSecret string) error
 	GetFiles(ctx context.Context, event *Event) ([]string, error)
+	GetFile(ctx context.Context, event *Event, path string) (string, error)
 	GetAgentDir(ctx context.Context, event *Event, path string) (string, error)
 	CheckPermission(ctx context.Context, event *Event) (bool, error)
 

@@ -34,6 +34,9 @@ func (m *mockProvider) SetClient(_ context.Context, _ *provider.Event, _, _ stri
 func (m *mockProvider) GetFiles(_ context.Context, _ *provider.Event) ([]string, error) {
 	return nil, nil
 }
+func (m *mockProvider) GetFile(_ context.Context, _ *provider.Event, _ string) (string, error) {
+	return "", nil
+}
 func (m *mockProvider) GetAgentDir(_ context.Context, _ *provider.Event, _ string) (string, error) {
 	return "", nil
 }
