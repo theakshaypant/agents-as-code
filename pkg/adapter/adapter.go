@@ -15,8 +15,10 @@ import (
 
 	agentv1alpha1 "github.com/theakshaypant/agents-as-code/pkg/apis/agent/v1alpha1"
 	"github.com/theakshaypant/agents-as-code/pkg/apis/agent/keys"
+	"github.com/theakshaypant/agents-as-code/pkg/instruction"
 	"github.com/theakshaypant/agents-as-code/pkg/matcher"
 	"github.com/theakshaypant/agents-as-code/pkg/provider"
+	"github.com/theakshaypant/agents-as-code/pkg/result"
 	"github.com/theakshaypant/agents-as-code/pkg/template"
 )
 
@@ -264,17 +266,22 @@ func (a *Adapter) processEvent(ctx context.Context, evt *provider.Event, prov pr
 	for _, m := range matches {
 		logger.Infow("agent matched", "agent", m.Agent.Name)
 
-		resolver := template.NewVariableResolver(evt, repo, prov, logger, m.MatchedComment)
+		varResolver := template.NewVariableResolver(evt, repo, prov, logger, m.MatchedComment)
 		needed := template.ExtractVariables(m.Agent.Spec.SystemPrompt)
-		vars := resolver.Resolve(ctx, needed)
+		vars := varResolver.Resolve(ctx, needed)
 		resolvedPrompt := template.ResolveVariables(m.Agent.Spec.SystemPrompt, vars, logger)
 
 		var instructions []agentv1alpha1.InstructionRef
 		if m.Agent.GetAnnotations()[keys.ResultHooks] == "true" {
 			instructions = append(instructions, agentv1alpha1.InstructionRef{
-				Name: "result-hooks-format",
+				Name:    "result-hooks-format",
+				Content: result.Instruction(),
 			})
 		}
+
+		instrResolver := instruction.NewResolver(prov, evt, logger)
+		annotRefs := instruction.ParseAnnotations(m.Agent.GetAnnotations())
+		instructions = append(instructions, instrResolver.ResolveAll(ctx, annotRefs, varResolver)...)
 
 		agentRun := &agentv1alpha1.AgentRun{
 			ObjectMeta: metav1.ObjectMeta{
