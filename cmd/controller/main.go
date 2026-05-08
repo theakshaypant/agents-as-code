@@ -12,8 +12,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
+	uberzap "go.uber.org/zap"
+
 	agentv1alpha1 "github.com/theakshaypant/agents-as-code/pkg/apis/agent/v1alpha1"
+	agentrun "github.com/theakshaypant/agents-as-code/pkg/reconciler/agentrun"
 	repository "github.com/theakshaypant/agents-as-code/pkg/reconciler/repository"
+	"github.com/theakshaypant/agents-as-code/pkg/sandbox"
 )
 
 var scheme = runtime.NewScheme()
@@ -43,9 +47,18 @@ func main() {
 		os.Exit(1)
 	}
 
-	reconciler := repository.NewReconciler(mgr.GetClient(), nil)
-	if err := reconciler.SetupWithManager(mgr); err != nil {
+	repoReconciler := repository.NewReconciler(mgr.GetClient(), nil)
+	if err := repoReconciler.SetupWithManager(mgr); err != nil {
 		logger.Error(err, "unable to set up Repository controller")
+		os.Exit(1)
+	}
+
+	zapLogger, _ := uberzap.NewProduction()
+	sugar := zapLogger.Sugar()
+	sb := sandbox.NewStub()
+	arReconciler := agentrun.NewReconciler(mgr.GetClient(), sb, agentrun.DefaultProviderFactory, sugar)
+	if err := arReconciler.SetupWithManager(mgr); err != nil {
+		logger.Error(err, "unable to set up AgentRun controller")
 		os.Exit(1)
 	}
 
