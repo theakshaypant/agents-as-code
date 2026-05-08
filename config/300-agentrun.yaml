@@ -126,6 +126,11 @@ spec:
                     AgentRun creation time.
                   items:
                     properties:
+                      content:
+                        description: |-
+                          Content is the resolved instruction text.
+                          Populated at AgentRun creation time by the adapter.
+                        type: string
                       name:
                         description: Name is a human-readable identifier for this instruction source.
                         type: string

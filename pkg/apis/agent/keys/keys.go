@@ -10,6 +10,9 @@ const (
 	OnLabel        = agent.GroupName + "/on-label"
 
 	ResultHooks = agent.GroupName + "/result-hooks"
+
+	Instruction     = agent.GroupName + "/instruction"
+	InstructionBase = agent.GroupName + "/instruction-"
 )
 
 var AllTriggerAnnotations = []string{

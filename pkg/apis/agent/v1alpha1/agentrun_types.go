@@ -75,6 +75,11 @@ type InstructionRef struct {
 	// Mutually exclusive with Path.
 	// +optional
 	URL string `json:"url,omitempty"`
+
+	// Content is the resolved instruction text.
+	// Populated at AgentRun creation time by the adapter.
+	// +optional
+	Content string `json:"content,omitempty"`
 }
 
 type AgentRunEventInfo struct {
