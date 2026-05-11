@@ -1,6 +1,6 @@
 # Result Hooks — Structured Output Format
 
-You must write your results as a JSON object to `/output/result.json` when you are done. The controller will read this file and execute the actions you specify on your behalf. You do not need to call any APIs directly — just describe what you want to happen.
+Your final response must be a structured Result object with an `actions` array. The controller will execute the actions you specify on your behalf. You do not need to call any APIs directly — just describe what you want to happen. You MUST include at least one action in your response.
 
 ## Format
 

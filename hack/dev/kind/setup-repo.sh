@@ -10,7 +10,7 @@
 #   REPO_NAME      — CR name (default: derived from REPO_URL)
 #   REPO_NAMESPACE — namespace for the CR (default: agents-as-code-system)
 #   AI_ENABLED     — enable AI agents (default: false)
-#   AI_PROVIDER    — LLM provider name (e.g. anthropic, openai)
+#   AI_PROVIDER    — LLM provider name (e.g. openai, anthropic, gemini)
 #   AI_API_KEY     — LLM API key
 set -euf
 cd $(dirname $(readlink -f ${0}))
@@ -80,10 +80,16 @@ if [[ "${AI_ENABLED:-false}" == "true" ]]; then
   settings:
     ai:
       enabled: true
-      provider: "${AI_PROVIDER:-gemini}"
+      provider: "${AI_PROVIDER:-google}"
+      model: "${AI_MODEL:-gemini-2.0-flash}"
       secret_ref:
         name: "${AI_SECRET_NAME}"
         key: "api-key"
+      max_tokens_per_run: 50000
+      max_timeout_seconds: 300
+      model_config:
+        temperature: "0.2"
+        max_output_tokens: 4096
 AIEOF
   )
 fi
