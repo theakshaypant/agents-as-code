@@ -10,7 +10,7 @@ require (
 	k8s.io/apimachinery v0.35.4
 	k8s.io/client-go v0.35.4
 	knative.dev/pkg v0.0.0-20260406140200-cb58ae50e894
-	sigs.k8s.io/agent-sandbox v0.4.2
+	sigs.k8s.io/agent-sandbox v0.4.5
 	sigs.k8s.io/controller-runtime v0.23.3
 )
 

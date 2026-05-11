@@ -218,8 +218,8 @@ k8s.io/utils v0.0.0-20251002143259-bc988d571ff4 h1:SjGebBtkBqHFOli+05xYbK8YF1Dzk
 k8s.io/utils v0.0.0-20251002143259-bc988d571ff4/go.mod h1:OLgZIPagt7ERELqWJFomSt595RzquPNLL48iOWgYOg0=
 knative.dev/pkg v0.0.0-20260406140200-cb58ae50e894 h1:Zabll+2HVz/YH9JLIIL/o7FH8tQP7m2neAgUNSJUjGk=
 knative.dev/pkg v0.0.0-20260406140200-cb58ae50e894/go.mod h1:pqHAkUWsa/DsOKJvubQ7JjesfbA+W7ph3nOXt7DCiAw=
-sigs.k8s.io/agent-sandbox v0.4.2 h1:tJCWMyq2ygQp0ZS2SmUNjsQC/3Enfad5u2hfgv4zFZ8=
-sigs.k8s.io/agent-sandbox v0.4.2/go.mod h1:efW32FJ224LKkdQeuYyiwA+ZBDosGa7ZSyB9Yfn0smc=
+sigs.k8s.io/agent-sandbox v0.4.5 h1:Hp4j3xelUSQCCilTeSl12BgMr2l6COYEF6MUxZX5KJw=
+sigs.k8s.io/agent-sandbox v0.4.5/go.mod h1:rrBXoA+nKZO2MIs3pTG+qOuKadX5gzMvO/nrlwC9W1w=
 sigs.k8s.io/controller-runtime v0.23.3 h1:VjB/vhoPoA9l1kEKZHBMnQF33tdCLQKJtydy4iqwZ80=
 sigs.k8s.io/controller-runtime v0.23.3/go.mod h1:B6COOxKptp+YaUT5q4l6LqUJTRpizbgf9KSRNdQGns0=
 sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 h1:IpInykpT6ceI+QxKBbEflcR5EXP7sU1kvOlxwZh5txg=
