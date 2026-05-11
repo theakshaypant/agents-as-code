@@ -1,4 +1,5 @@
 .PHONY: help build build-controller build-webhook test fmt vet generate \
+       build-runtime push-runtime test-runtime \
        kind-setup kind-base kind-deploy kind-redeploy kind-configure kind-restart \
        setup-repo logs-webhook logs-controller
 
@@ -57,6 +58,17 @@ kind-configure: ## Reconfigure agents-as-code (ingress + secrets) without rebuil
 
 kind-restart: ## Restart agents-as-code pods
 	./hack/dev/kind/install.sh -R
+
+# ── Agent Runtime ────────────────────────────────────────────────────
+
+build-runtime: ## Build the agent runtime container image
+	docker build -t localhost:$(REG_PORT)/aac-agent-runtime:latest runtime/
+
+push-runtime: build-runtime ## Build and push agent runtime to local registry
+	docker push localhost:$(REG_PORT)/aac-agent-runtime:latest
+
+test-runtime: ## Run agent runtime unit tests
+	cd runtime && python -m pytest test_agent_run.py -v
 
 kind-delete: ## Delete the kind cluster
 	kind delete cluster --name $(KIND_CLUSTER_NAME)

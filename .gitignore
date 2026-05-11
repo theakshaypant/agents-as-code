@@ -8,3 +8,8 @@ tmp/
 *.swp
 *.swo
 *~
+
+
+__pycache__/
+*.pyc
+.pytest_cache/
