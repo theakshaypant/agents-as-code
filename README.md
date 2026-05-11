@@ -1,30 +1,14 @@
 # Agents as Code (AAC)
 
-> **Experimental / Proof of Concept** — this project is a design exploration and not intended for production use.
+> **Proof of Concept** — this project demonstrates a working end-to-end flow for running AI agents on git events. See the [Roadmap](docs/roadmap.md) for where it's heading.
 
 Run AI agents on git events with declarative tool access and repo-aware context.
 
 ## Why
 
-Pipelines-as-Code (PaC) introduced AI/LLM-powered pipeline analysis as a tech preview feature — it can analyze pipeline failures using LLM providers and post root-cause analysis as PR comments. Products like Qodo Merge have shown that AI-powered developer workflows go far beyond failure analysis: automated PR descriptions, code review, inline suggestions, interactive Q&A, label generation — all driven by LLM analysis of code diffs and CI context.
+AI-powered developer workflows — automated code review, PR descriptions, issue triage, inline suggestions, implementation — are driven by LLM analysis of code diffs and CI context. AAC makes these workflows declarative: define agents as YAML in your repo, configure infrastructure once on a Kubernetes CR, and let git events drive everything.
 
-PaC proposed an "AI Skills redesign" to move from a single-purpose failure analyzer to a skill-based platform. Skills are Markdown files in `.tekton/ai/` that define when to trigger, what context to assemble, what prompt to send, and where to post results. [Fullsend](https://github.com/fullsend-ai/fullsend) explored fully autonomous agentic development — agents with per-role GitHub App identities that handle triage, implementation, review, and merge, coordinating exclusively through GitHub primitives. Fullsend uses curated, human-written context (per-repo `CLAUDE.md`, bookmarks, org-level architecture docs) to give agents the understanding they need.
-
-Each approach brings a different context model. PaC skills let users specify exactly which diffs, logs, and files to include. Fullsend relies on carefully curated documentation that humans write and maintain to reflect the codebase. AAC uses PaC-style template variables (`{{ pull_request_diff }}`, `{{ issue_comments }}`, etc.) to inject rich context into agent prompts, combined with MCP tools for direct API access when needed.
-
-AAC is designed to integrate with PaC, reusing its adapter, provider, and Repository CR infrastructure. PaC skills and AAC agents can coexist on the same repository — skills handle lightweight prompt-driven tasks (formatting pipeline output, generating descriptions), while AAC agents handle tasks that benefit from deeper structural context. AAC also builds on PaC's multi-provider foundation, supporting GitHub, GitLab, Bitbucket, and Gitea/Forgejo with multiple LLM providers — configured once on the Repository CR, shared by all agents.
-
-## Comparison
-
-| | Qodo Merge | PaC AI Skills | Fullsend | AAC |
-|---|---|---|---|---|
-| Context model | Code diff | Code diff + pipeline logs | Human-curated docs | Template variables + MCP tools |
-| Definition | SaaS config | Markdown in `.tekton/ai/` | Org-level config repo | YAML in `.tekton/agents/` |
-| Git providers | GitHub | GitHub, GitLab, Bitbucket, Gitea | GitHub | GitHub, GitLab, Bitbucket, Gitea |
-| LLM providers | Built-in | Configurable | Claude | Configurable |
-| Execution | SaaS | Inline in PaC process | Per-role GitHub App | Isolated sandbox (K8s SIG Agent Sandbox) |
-| Audit | PR comments | PR comments | Git actions | AgentRun CR |
-| Strength | Zero setup, polished UX | Pipeline-aware, multi-provider | Full autonomy, security-first | Structural context, declarative |
+AAC uses template variables (`{{ pull_request_diff }}`, `{{ issue_comments }}`, etc.) to inject rich context into agent prompts, combined with MCP tools for direct API access when needed. Every agent runs in an isolated sandbox with configurable network policy, budget caps, and tool access — the infra team controls what's allowed, developers control what each agent does.
 
 ## How It Works
 
@@ -56,25 +40,30 @@ spec:
 
 Agents define their behavior via `system_prompt` and select tools from the Repository's MCP server catalog. The infra team controls what's available (LLM settings, MCP servers, network policy, budget caps); developers control what each agent does.
 
-## Trigger Annotations
+## What's Working
 
-Triggers are declared as annotations on Agent metadata, following PaC's annotation-based matching model. Annotations use the `agent.tekton.dev/` prefix.
+The POC demonstrates a complete end-to-end pipeline:
 
-| Annotation | Description | Default (absent) |
-|------------|-------------|------------------|
-| `on-event` | Event types to match (required) | — |
-| `on-target-branch` | Branch glob patterns | Match all |
-| `on-comment` | Regex match on comment body | Pass |
-| `on-path-change` | Glob match on changed files | Pass |
-| `on-label` | Label match for labeled events | Pass |
+- **Webhook handling** — receives, validates, and parses GitHub webhook events (push, pull_request, pull_request_review, issue_comment, issues, labeled)
+- **Agent matching** — discovers `.tekton/agents/*.yaml` from the repo and matches against events using annotation-based triggers
+- **Template variable resolution** — lazily resolves `{{ pull_request_diff }}`, `{{ issue_comments }}`, and 25+ other variables from the GitHub API with caching
+- **Instruction loading** — resolves instruction files from repo paths and remote URLs via annotation references
+- **Sandbox execution** — real [K8s SIG Agent Sandbox](https://github.com/kubernetes-sigs/agent-sandbox) integration with a PydanticAI-based runtime; full lifecycle management (create → write config → run → read result → destroy)
+- **Repo cloning** — opt-in via `clone-repo` annotation; clones the PR head branch or event branch into the sandbox
+- **Result hooks** — 6 action types (comment, review, label, create-pr, status, commit) executed by the controller using Repository CR credentials, with partial success handling
+- **GitHub provider** — complete implementation of all read and write operations (diffs, reviews, comments, labels, status checks, commits)
 
-**Value format:** single value (`"push"`) or bracket array (`"[push, pull_request]"`). Use `&#44;` for literal commas within values.
-
-**Matching semantics:** `on-comment` is checked first as a separate track — if present and matched, the agent is selected immediately. For the standard path, all present annotations are AND'd (all must match). Within each annotation, array values are OR'd.
-
-**Supported events:** `push`, `pull_request`, `pull_request_review`, `issue_comment`, `issues_labeled`, `pull_request_labeled`
+See the [Roadmap](docs/roadmap.md) for what's next — knowledge graph context, security policy, agent chaining, and more.
 
 ## Documentation
 
-- [Getting Started](docs/getting-started.md) — deploy AAC locally with kind and test it end-to-end
-- [Design](docs/design.md) — architecture, CRDs, execution model, and trust model
+**Guides**
+- [Getting Started](docs/guides/getting-started.md) — deploy AAC locally with kind and test it end-to-end
+- [Writing Agents](docs/guides/writing-agents.md) — define agents, triggers, template variables, tools, instructions, and result hooks
+
+**Reference**
+- [Architecture & Concepts](docs/reference/concepts.md) — event flow, trust model, execution model, design decisions
+- [Configuration](docs/reference/configuration.md) — Repository CR settings: AI, MCP servers, network, runtime
+
+**Project**
+- [Roadmap](docs/roadmap.md) — vision, future work, and what this POC enables
