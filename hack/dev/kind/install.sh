@@ -130,8 +130,46 @@ function install_nginx() {
   echo "done."
 }
 
+function install_agent_sandbox() {
+  echo "Installing agent-sandbox controller"
+  SANDBOX_VERSION=$(curl -sL https://api.github.com/repos/kubernetes-sigs/agent-sandbox/releases/latest | grep '"tag_name"' | head -1 | cut -d'"' -f4)
+  if [[ -z "${SANDBOX_VERSION}" ]]; then
+    echo "Warning: could not fetch latest agent-sandbox release, using v0.4.5"
+    SANDBOX_VERSION="v0.4.5"
+  fi
+  echo "Using agent-sandbox ${SANDBOX_VERSION}"
+  kubectl apply -f "https://github.com/kubernetes-sigs/agent-sandbox/releases/download/${SANDBOX_VERSION}/manifest.yaml"
+  kubectl apply -f "https://github.com/kubernetes-sigs/agent-sandbox/releases/download/${SANDBOX_VERSION}/extensions.yaml"
+
+  echo -n "Waiting for agent-sandbox controller: "
+  i=0
+  while true; do
+    [[ ${i} == 60 ]] && { echo "timed out"; break; }
+    ready=$(kubectl -n agent-sandbox-system wait --for=condition=ready pod --all --timeout=5s 2>/dev/null || true)
+    [[ -n ${ready} ]] && break
+    sleep 5
+    i=$((i + 1))
+  done
+  echo "done."
+
+  echo "Deploying sandbox router"
+  curl -sSL "https://raw.githubusercontent.com/kubernetes-sigs/agent-sandbox/refs/tags/${SANDBOX_VERSION}/clients/python/agentic-sandbox-client/sandbox-router/sandbox_router.yaml" \
+    | sed "s|\${ROUTER_IMAGE}|us-central1-docker.pkg.dev/k8s-staging-images/agent-sandbox/sandbox-router:latest-main|g" \
+    | kubectl apply -f -
+  # Also deploy the router in agents-as-code-system so the SDK can discover it
+  curl -sSL "https://raw.githubusercontent.com/kubernetes-sigs/agent-sandbox/refs/tags/${SANDBOX_VERSION}/clients/python/agentic-sandbox-client/sandbox-router/sandbox_router.yaml" \
+    | sed "s|\${ROUTER_IMAGE}|us-central1-docker.pkg.dev/k8s-staging-images/agent-sandbox/sandbox-router:latest-main|g" \
+    | sed "s|namespace: default|namespace: agents-as-code-system|g" \
+    | kubectl apply -f -
+}
+
 function install_aac() {
   echo "Deploying agents-as-code from ${AAC_DIR}"
+
+  echo "Building agent runtime image"
+  docker build -t localhost:${REG_PORT}/aac-agent-runtime:latest ${AAC_DIR}/runtime
+  docker push localhost:${REG_PORT}/aac-agent-runtime:latest
+
   oldPwd=${PWD}
   cd ${AAC_DIR}
   env KO_DOCKER_REPO=localhost:${REG_PORT} ${ko} apply -f config --sbom=none -B >/dev/null
@@ -182,6 +220,7 @@ main() {
     echo "Skipping kind reinstall"
   fi
   install_nginx
+  install_agent_sandbox
   install_aac
   echo ""
   echo "Done!"

@@ -3,6 +3,7 @@ package sandbox
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"k8s.io/client-go/rest"
 	sdk "sigs.k8s.io/agent-sandbox/clients/go/sandbox"
@@ -12,7 +13,8 @@ var _ Runtime = (*AgentSandboxRuntime)(nil)
 
 // AgentSandboxRuntime implements Runtime using the K8s SIG Agent Sandbox SDK.
 type AgentSandboxRuntime struct {
-	client *sdk.Client
+	client          *sdk.Client
+	defaultTemplate string
 }
 
 // NewAgentSandboxRuntime creates a runtime backed by the agent-sandbox controller.
@@ -20,18 +22,24 @@ type AgentSandboxRuntime struct {
 // client; individual Create calls can override it via CreateOpts.TemplateName.
 func NewAgentSandboxRuntime(ctx context.Context, cfg *rest.Config, defaultTemplate string) (*AgentSandboxRuntime, error) {
 	c, err := sdk.NewClient(ctx, sdk.Options{
-		TemplateName: defaultTemplate,
-		RestConfig:   cfg,
-		Quiet:        true,
+		TemplateName:    defaultTemplate,
+		RestConfig:      cfg,
+		Quiet:           true,
+		RequestTimeout:  10 * time.Minute,
+		PerAttemptTimeout: 5 * time.Minute,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("initializing agent-sandbox client: %w", err)
 	}
-	return &AgentSandboxRuntime{client: c}, nil
+	return &AgentSandboxRuntime{client: c, defaultTemplate: defaultTemplate}, nil
 }
 
 func (r *AgentSandboxRuntime) Create(ctx context.Context, opts CreateOpts) (*Handle, error) {
-	sb, err := r.client.CreateSandbox(ctx, opts.TemplateName, opts.Namespace)
+	template := opts.TemplateName
+	if template == "" {
+		template = r.defaultTemplate
+	}
+	sb, err := r.client.CreateSandbox(ctx, template, opts.Namespace)
 	if err != nil {
 		return nil, fmt.Errorf("creating sandbox: %w", err)
 	}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"os"
 
@@ -30,8 +31,10 @@ func init() {
 func main() {
 	var metricsAddr string
 	var healthAddr string
+	var sandboxTemplate string
 	flag.StringVar(&metricsAddr, "metrics-addr", ":8080", "The address the metrics endpoint binds to.")
 	flag.StringVar(&healthAddr, "health-addr", ":8081", "The address the health endpoint binds to.")
+	flag.StringVar(&sandboxTemplate, "sandbox-template", "aac-agent", "SandboxTemplate name for sandbox creation.")
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
@@ -55,7 +58,13 @@ func main() {
 
 	zapLogger, _ := uberzap.NewProduction()
 	sugar := zapLogger.Sugar()
-	sb := sandbox.NewStub()
+
+	sb, err := sandbox.NewAgentSandboxRuntime(context.Background(), ctrl.GetConfigOrDie(), sandboxTemplate)
+	if err != nil {
+		logger.Error(err, "unable to create agent-sandbox runtime")
+		os.Exit(1)
+	}
+
 	arReconciler := agentrun.NewReconciler(mgr.GetClient(), sb, agentrun.DefaultProviderFactory, sugar)
 	if err := arReconciler.SetupWithManager(mgr); err != nil {
 		logger.Error(err, "unable to set up AgentRun controller")

@@ -1,0 +1,39 @@
+apiVersion: extensions.agents.x-k8s.io/v1alpha1
+kind: SandboxTemplate
+metadata:
+  name: aac-agent
+  namespace: agents-as-code-system
+  labels:
+    app.kubernetes.io/version: "devel"
+    app.kubernetes.io/instance: default
+    app.kubernetes.io/part-of: agents-as-code
+spec:
+  envVarsInjectionPolicy: Allowed
+  podTemplate:
+    spec:
+      containers:
+        - name: agent-runtime
+          image: localhost:5000/aac-agent-runtime:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8888
+          readinessProbe:
+            httpGet:
+              path: "/"
+              port: 8888
+            initialDelaySeconds: 0
+            periodSeconds: 1
+          livenessProbe:
+            httpGet:
+              path: "/"
+              port: 8888
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 60
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+              ephemeral-storage: "512Mi"
+      restartPolicy: "OnFailure"
