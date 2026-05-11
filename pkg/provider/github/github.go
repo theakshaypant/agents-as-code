@@ -52,12 +52,13 @@ func (p *Provider) CreateComment(ctx context.Context, evt *provider.Event, body 
 	if p.client == nil {
 		return "", fmt.Errorf("github client not initialized")
 	}
-	if evt.PullRequestNumber == 0 {
-		return "", fmt.Errorf("no pull request number in event")
+	num := issueNumber(evt)
+	if num == 0 {
+		return "", fmt.Errorf("no issue or pull request number in event")
 	}
 
 	comment, _, err := p.client.Issues.CreateComment(
-		ctx, evt.Organization, evt.Repository, evt.PullRequestNumber,
+		ctx, evt.Organization, evt.Repository, num,
 		&gh.IssueComment{Body: gh.Ptr(body)},
 	)
 	if err != nil {
@@ -106,12 +107,13 @@ func (p *Provider) AddLabels(ctx context.Context, evt *provider.Event, labels []
 	if p.client == nil {
 		return fmt.Errorf("github client not initialized")
 	}
-	if evt.PullRequestNumber == 0 {
-		return fmt.Errorf("no pull request number in event")
+	num := issueNumber(evt)
+	if num == 0 {
+		return fmt.Errorf("no issue or pull request number in event")
 	}
 
 	_, _, err := p.client.Issues.AddLabelsToIssue(
-		ctx, evt.Organization, evt.Repository, evt.PullRequestNumber, labels,
+		ctx, evt.Organization, evt.Repository, num, labels,
 	)
 	if err != nil {
 		return fmt.Errorf("adding labels: %w", err)
@@ -123,13 +125,14 @@ func (p *Provider) RemoveLabels(ctx context.Context, evt *provider.Event, labels
 	if p.client == nil {
 		return fmt.Errorf("github client not initialized")
 	}
-	if evt.PullRequestNumber == 0 {
-		return fmt.Errorf("no pull request number in event")
+	num := issueNumber(evt)
+	if num == 0 {
+		return fmt.Errorf("no issue or pull request number in event")
 	}
 
 	for _, label := range labels {
 		_, err := p.client.Issues.RemoveLabelForIssue(
-			ctx, evt.Organization, evt.Repository, evt.PullRequestNumber, label,
+			ctx, evt.Organization, evt.Repository, num, label,
 		)
 		if err != nil {
 			p.logger.Warnf("failed to remove label %q: %v", label, err)
@@ -193,13 +196,19 @@ func (p *Provider) CreateCommit(ctx context.Context, evt *provider.Event, messag
 	if p.client == nil {
 		return "", fmt.Errorf("github client not initialized")
 	}
-	if evt.HeadBranch == "" {
-		return "", fmt.Errorf("no head branch in event")
+
+	branch := evt.HeadBranch
+	if branch == "" {
+		branch, _ = p.createIssueBranch(ctx, evt)
+		if branch == "" {
+			return "", fmt.Errorf("no head branch in event and could not create one")
+		}
+		evt.HeadBranch = branch
 	}
 
-	ref, _, err := p.client.Git.GetRef(ctx, evt.Organization, evt.Repository, "refs/heads/"+evt.HeadBranch)
+	ref, _, err := p.client.Git.GetRef(ctx, evt.Organization, evt.Repository, "refs/heads/"+branch)
 	if err != nil {
-		return "", fmt.Errorf("getting ref for branch %q: %w", evt.HeadBranch, err)
+		return "", fmt.Errorf("getting ref for branch %q: %w", branch, err)
 	}
 	baseCommitSHA := ref.GetObject().GetSHA()
 
@@ -247,6 +256,34 @@ func (p *Provider) CreateCommit(ctx context.Context, evt *provider.Event, messag
 	}
 
 	return commit.GetSHA(), nil
+}
+
+func (p *Provider) createIssueBranch(ctx context.Context, evt *provider.Event) (string, error) {
+	repo, _, err := p.client.Repositories.Get(ctx, evt.Organization, evt.Repository)
+	if err != nil {
+		return "", fmt.Errorf("getting repo: %w", err)
+	}
+	defaultBranch := repo.GetDefaultBranch()
+
+	baseRef, _, err := p.client.Git.GetRef(ctx, evt.Organization, evt.Repository, "refs/heads/"+defaultBranch)
+	if err != nil {
+		return "", fmt.Errorf("getting default branch ref: %w", err)
+	}
+
+	branch := fmt.Sprintf("aac/issue-%d", evt.IssueNumber)
+	_, _, err = p.client.Git.CreateRef(ctx, evt.Organization, evt.Repository, gh.CreateRef{
+		Ref: "refs/heads/" + branch,
+		SHA: baseRef.GetObject().GetSHA(),
+	})
+	if err != nil {
+		// Branch may already exist from a previous run — try to use it
+		if _, _, getErr := p.client.Git.GetRef(ctx, evt.Organization, evt.Repository, "refs/heads/"+branch); getErr != nil {
+			return "", fmt.Errorf("creating branch %q: %w", branch, err)
+		}
+	}
+
+	evt.DefaultBranch = defaultBranch
+	return branch, nil
 }
 
 func (p *Provider) GetFile(ctx context.Context, evt *provider.Event, path string) (string, error) {
@@ -477,14 +514,22 @@ func (p *Provider) GetPullRequestComments(ctx context.Context, evt *provider.Eve
 	return formatComments(allComments), nil
 }
 
+func issueNumber(evt *provider.Event) int {
+	if evt.IssueNumber > 0 {
+		return evt.IssueNumber
+	}
+	return evt.PullRequestNumber
+}
+
 func (p *Provider) GetIssueTitle(ctx context.Context, evt *provider.Event) (string, error) {
 	if p.client == nil {
 		return "", fmt.Errorf("github client not initialized")
 	}
-	if evt.PullRequestNumber == 0 {
+	num := issueNumber(evt)
+	if num == 0 {
 		return "", nil
 	}
-	issue, _, err := p.client.Issues.Get(ctx, evt.Organization, evt.Repository, evt.PullRequestNumber)
+	issue, _, err := p.client.Issues.Get(ctx, evt.Organization, evt.Repository, num)
 	if err != nil {
 		return "", fmt.Errorf("fetching issue title: %w", err)
 	}
@@ -495,10 +540,11 @@ func (p *Provider) GetIssueBody(ctx context.Context, evt *provider.Event) (strin
 	if p.client == nil {
 		return "", fmt.Errorf("github client not initialized")
 	}
-	if evt.PullRequestNumber == 0 {
+	num := issueNumber(evt)
+	if num == 0 {
 		return "", nil
 	}
-	issue, _, err := p.client.Issues.Get(ctx, evt.Organization, evt.Repository, evt.PullRequestNumber)
+	issue, _, err := p.client.Issues.Get(ctx, evt.Organization, evt.Repository, num)
 	if err != nil {
 		return "", fmt.Errorf("fetching issue body: %w", err)
 	}
@@ -509,14 +555,15 @@ func (p *Provider) GetIssueComments(ctx context.Context, evt *provider.Event) (s
 	if p.client == nil {
 		return "", fmt.Errorf("github client not initialized")
 	}
-	if evt.PullRequestNumber == 0 {
+	num := issueNumber(evt)
+	if num == 0 {
 		return "", nil
 	}
 
 	var allComments []*gh.IssueComment
 	opts := &gh.IssueListCommentsOptions{ListOptions: gh.ListOptions{PerPage: 100}}
 	for {
-		comments, resp, err := p.client.Issues.ListComments(ctx, evt.Organization, evt.Repository, evt.PullRequestNumber, opts)
+		comments, resp, err := p.client.Issues.ListComments(ctx, evt.Organization, evt.Repository, num, opts)
 		if err != nil {
 			return "", fmt.Errorf("listing issue comments: %w", err)
 		}
@@ -534,10 +581,11 @@ func (p *Provider) GetIssueLabels(ctx context.Context, evt *provider.Event) (str
 	if p.client == nil {
 		return "", fmt.Errorf("github client not initialized")
 	}
-	if evt.PullRequestNumber == 0 {
+	num := issueNumber(evt)
+	if num == 0 {
 		return "", nil
 	}
-	issue, _, err := p.client.Issues.Get(ctx, evt.Organization, evt.Repository, evt.PullRequestNumber)
+	issue, _, err := p.client.Issues.Get(ctx, evt.Organization, evt.Repository, num)
 	if err != nil {
 		return "", fmt.Errorf("fetching issue labels: %w", err)
 	}

@@ -107,6 +107,7 @@ func parseIssueCommentEvent(evt *provider.Event, e *gh.IssueCommentEvent) *provi
 	evt.URL = e.GetRepo().GetHTMLURL()
 	evt.DefaultBranch = e.GetRepo().GetDefaultBranch()
 	evt.Sender = e.GetSender().GetLogin()
+	evt.IssueNumber = e.GetIssue().GetNumber()
 	if e.GetIssue().IsPullRequest() {
 		evt.PullRequestNumber = e.GetIssue().GetNumber()
 	}
@@ -123,6 +124,7 @@ func parseIssuesEvent(evt *provider.Event, e *gh.IssuesEvent) *provider.Event {
 	evt.URL = e.GetRepo().GetHTMLURL()
 	evt.DefaultBranch = e.GetRepo().GetDefaultBranch()
 	evt.Sender = e.GetSender().GetLogin()
+	evt.IssueNumber = e.GetIssue().GetNumber()
 	evt.Label = e.GetLabel().GetName()
 
 	return evt

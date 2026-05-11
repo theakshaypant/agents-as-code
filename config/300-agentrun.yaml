@@ -80,6 +80,9 @@ spec:
                       required:
                         - body
                       type: object
+                    issue_number:
+                      description: IssueNumber is the issue number (for issue_comment and issues_labeled events).
+                      type: integer
                     labels:
                       description: Labels on the issue/PR at event time.
                       items:

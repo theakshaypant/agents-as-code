@@ -59,6 +59,7 @@ func CreateProviderEvent(run *agentv1alpha1.AgentRun, repo *agentv1alpha1.Reposi
 	evt.BaseBranch = run.Spec.Event.Branch
 	evt.Sender = run.Spec.Event.Sender
 	evt.SHAURL = run.Spec.Event.URL
+	evt.IssueNumber = run.Spec.Event.IssueNumber
 
 	if pr := run.Spec.Event.PullRequest; pr != nil {
 		evt.PullRequestNumber = pr.Number

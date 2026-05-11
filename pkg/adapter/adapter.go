@@ -283,11 +283,19 @@ func (a *Adapter) processEvent(ctx context.Context, evt *provider.Event, prov pr
 		annotRefs := instruction.ParseAnnotations(m.Agent.GetAnnotations())
 		instructions = append(instructions, instrResolver.ResolveAll(ctx, annotRefs, varResolver)...)
 
+		runAnnotations := matcher.TriggerAnnotations(m.Agent.GetAnnotations())
+		if m.Agent.GetAnnotations()[keys.CloneRepo] == "true" {
+			if runAnnotations == nil {
+				runAnnotations = make(map[string]string)
+			}
+			runAnnotations[keys.CloneRepo] = "true"
+		}
+
 		agentRun := &agentv1alpha1.AgentRun{
 			ObjectMeta: metav1.ObjectMeta{
 				GenerateName: m.Agent.Name + "-",
 				Namespace:    repo.Namespace,
-				Annotations:  matcher.TriggerAnnotations(m.Agent.GetAnnotations()),
+				Annotations:  runAnnotations,
 			},
 			Spec: agentv1alpha1.AgentRunSpec{
 				AgentRef:      m.Agent.Name,
@@ -340,12 +348,13 @@ func (a *Adapter) matchAgents(ctx context.Context, evt *provider.Event, prov pro
 
 func buildEventInfo(evt *provider.Event) agentv1alpha1.AgentRunEventInfo {
 	info := agentv1alpha1.AgentRunEventInfo{
-		Type:   string(evt.TriggerType),
-		Action: evt.EventType,
-		SHA:    evt.SHA,
-		Branch: evt.BaseBranch,
-		Sender: evt.Sender,
-		URL:    evt.SHAURL,
+		Type:        string(evt.TriggerType),
+		Action:      evt.EventType,
+		SHA:         evt.SHA,
+		Branch:      evt.BaseBranch,
+		Sender:      evt.Sender,
+		URL:         evt.SHAURL,
+		IssueNumber: evt.IssueNumber,
 	}
 	if evt.PullRequestNumber > 0 {
 		info.PullRequest = &agentv1alpha1.PullRequestInfo{

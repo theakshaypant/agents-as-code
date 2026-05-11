@@ -13,6 +13,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	agentv1alpha1 "github.com/theakshaypant/agents-as-code/pkg/apis/agent/v1alpha1"
+	"github.com/theakshaypant/agents-as-code/pkg/apis/agent/keys"
 	"github.com/theakshaypant/agents-as-code/pkg/result"
 	"github.com/theakshaypant/agents-as-code/pkg/sandbox"
 )
@@ -124,6 +125,12 @@ func (r *Reconciler) reconcileAgent(ctx context.Context, run *agentv1alpha1.Agen
 		Name:      run.Spec.RepositoryRef,
 	}, &repo); err != nil {
 		return fmt.Errorf("fetching Repository %s: %w", run.Spec.RepositoryRef, err)
+	}
+
+	if run.Annotations[keys.CloneRepo] == "true" {
+		if err := r.cloneRepo(ctx, handle, run, &repo); err != nil {
+			return fmt.Errorf("cloning repo: %w", err)
+		}
 	}
 
 	builder := NewRuntimeConfigBuilder(r.client)

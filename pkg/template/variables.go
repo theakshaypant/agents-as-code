@@ -69,13 +69,19 @@ func (r *VariableResolver) metadataVars() map[string]string {
 		"repo_clone_path": RepoClonePath,
 	}
 
+	if r.event.IssueNumber > 0 {
+		m["issue_number"] = fmt.Sprintf("%d", r.event.IssueNumber)
+	}
+
 	if r.event.PullRequestNumber > 0 {
 		m["pull_request_number"] = fmt.Sprintf("%d", r.event.PullRequestNumber)
 		m["pull_request_title"] = r.event.PullRequestTitle
 		m["pull_request_author"] = r.event.PullRequestAuthor
 		m["pull_request_url"] = r.event.PullRequestURL
 		m["pull_request_head_sha"] = r.event.SHA
-		m["issue_number"] = fmt.Sprintf("%d", r.event.PullRequestNumber)
+		if r.event.IssueNumber == 0 {
+			m["issue_number"] = fmt.Sprintf("%d", r.event.PullRequestNumber)
+		}
 	}
 
 	if r.event.Label != "" {

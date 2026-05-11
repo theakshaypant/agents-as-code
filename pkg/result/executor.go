@@ -109,7 +109,15 @@ func (e *Executor) executeLabel(ctx context.Context, a *Action, event *provider.
 }
 
 func (e *Executor) executeCreatePR(ctx context.Context, a *Action, event *provider.Event) (agentv1alpha1.AgentAction, error) {
-	url, err := e.provider.CreatePullRequest(ctx, event, a.Title, a.Body, a.Head, a.Base)
+	head := event.HeadBranch
+	if head == "" {
+		head = a.Head
+	}
+	base := a.Base
+	if base == "" {
+		base = event.DefaultBranch
+	}
+	url, err := e.provider.CreatePullRequest(ctx, event, a.Title, a.Body, head, base)
 	if err != nil {
 		return agentv1alpha1.AgentAction{}, fmt.Errorf("creating pull request: %w", err)
 	}

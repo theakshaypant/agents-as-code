@@ -107,6 +107,10 @@ type AgentRunEventInfo struct {
 	// +optional
 	URL string `json:"url,omitempty"`
 
+	// IssueNumber is the issue number (for issue_comment and issues_labeled events).
+	// +optional
+	IssueNumber int `json:"issue_number,omitempty"`
+
 	// PullRequest contains PR-specific details.
 	// +optional
 	PullRequest *PullRequestInfo `json:"pull_request,omitempty"`
