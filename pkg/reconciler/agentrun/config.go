@@ -12,9 +12,9 @@ import (
 )
 
 const (
-	ConfigPath  = "/etc/aac/config.json"
-	ResultPath  = "/output/result.json"
-	APIKeyEnv   = "LLM_API_KEY"
+	ConfigPath   = "config.json"
+	ResultPath   = "result.json"
+	APIKeyEnv    = "LLM_API_KEY"
 	WorkspaceDir = "/workspace"
 )
 
@@ -36,6 +36,7 @@ type RuntimeModel struct {
 	Provider  string              `json:"provider"`
 	Model     string              `json:"model"`
 	APIKeyEnv string              `json:"api_key_env"`
+	APIKey    string              `json:"api_key,omitempty"`
 	BaseURL   string              `json:"base_url,omitempty"`
 	Config    *RuntimeModelConfig `json:"config,omitempty"`
 }
@@ -55,8 +56,7 @@ type RuntimeThinkingConfig struct {
 
 type RuntimeMCPServer struct {
 	Name    string          `json:"name"`
-	Image   string          `json:"image,omitempty"`
-	Command []string        `json:"command,omitempty"`
+	Command []string        `json:"command"`
 	Args    []string        `json:"args,omitempty"`
 	Env     []RuntimeEnvVar `json:"env,omitempty"`
 }
@@ -80,10 +80,15 @@ func NewRuntimeConfigBuilder(c client.Client) *RuntimeConfigBuilder {
 }
 
 func (b *RuntimeConfigBuilder) Build(ctx context.Context, run *agentv1alpha1.AgentRun, repo *agentv1alpha1.Repository) ([]byte, error) {
+	model, err := b.buildModel(ctx, repo)
+	if err != nil {
+		return nil, err
+	}
+
 	cfg := RuntimeConfig{
 		SystemPrompt: run.Spec.SystemPrompt,
 		Instructions: b.buildInstructions(run),
-		Model:        b.buildModel(repo),
+		Model:        model,
 		Limits:       b.buildLimits(run),
 		Workspace:    WorkspaceDir,
 	}
@@ -115,17 +120,29 @@ func (b *RuntimeConfigBuilder) buildInstructions(run *agentv1alpha1.AgentRun) []
 	return instructions
 }
 
-func (b *RuntimeConfigBuilder) buildModel(repo *agentv1alpha1.Repository) RuntimeModel {
+func (b *RuntimeConfigBuilder) buildModel(ctx context.Context, repo *agentv1alpha1.Repository) (RuntimeModel, error) {
 	m := RuntimeModel{
 		APIKeyEnv: APIKeyEnv,
 	}
 	if repo.Spec.Settings == nil || repo.Spec.Settings.AI == nil {
-		return m
+		return m, nil
 	}
 	ai := repo.Spec.Settings.AI
 	m.Provider = ai.Provider
 	m.Model = ai.Model
 	m.BaseURL = ai.BaseURL
+
+	if ai.SecretRef.Name != "" {
+		key := ai.SecretRef.Key
+		if key == "" {
+			key = "api-key"
+		}
+		apiKey, err := b.resolveSecretKey(ctx, repo.Namespace, ai.SecretRef.Name, key)
+		if err != nil {
+			return m, fmt.Errorf("resolving AI API key: %w", err)
+		}
+		m.APIKey = apiKey
+	}
 
 	if ai.ModelConfig != nil {
 		mc := &RuntimeModelConfig{
@@ -142,7 +159,19 @@ func (b *RuntimeConfigBuilder) buildModel(repo *agentv1alpha1.Repository) Runtim
 		}
 		m.Config = mc
 	}
-	return m
+	return m, nil
+}
+
+func (b *RuntimeConfigBuilder) resolveSecretKey(ctx context.Context, namespace, name, key string) (string, error) {
+	var secret corev1.Secret
+	if err := b.client.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, &secret); err != nil {
+		return "", fmt.Errorf("fetching secret %s/%s: %w", namespace, name, err)
+	}
+	val, ok := secret.Data[key]
+	if !ok {
+		return "", fmt.Errorf("key %q not found in secret %s/%s", key, namespace, name)
+	}
+	return string(val), nil
 }
 
 func (b *RuntimeConfigBuilder) buildMCPServers(ctx context.Context, run *agentv1alpha1.AgentRun, repo *agentv1alpha1.Repository) ([]RuntimeMCPServer, error) {
@@ -172,7 +201,6 @@ func (b *RuntimeConfigBuilder) buildMCPServers(ctx context.Context, run *agentv1
 
 		servers = append(servers, RuntimeMCPServer{
 			Name:    spec.Name,
-			Image:   spec.Image,
 			Command: spec.Command,
 			Args:    spec.Args,
 			Env:     resolved,

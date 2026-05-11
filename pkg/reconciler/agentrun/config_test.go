@@ -93,6 +93,61 @@ func TestBuild_BasicConfig(t *testing.T) {
 	}
 }
 
+func TestBuild_AIKeyFromSecret(t *testing.T) {
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "ai-api-key",
+			Namespace: "default",
+		},
+		Data: map[string][]byte{
+			"api-key": []byte("sk-test-key-123"),
+		},
+	}
+
+	run := &agentv1alpha1.AgentRun{
+		Spec: agentv1alpha1.AgentRunSpec{
+			SystemPrompt: "test",
+			Limits:       agentv1alpha1.AgentLimits{MaxTokens: 1000, TimeoutSeconds: 60},
+		},
+	}
+
+	repo := &agentv1alpha1.Repository{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "default"},
+		Spec: agentv1alpha1.RepositorySpec{
+			Settings: &agentv1alpha1.Settings{
+				AI: &agentv1alpha1.AIConfig{
+					Provider: "openai",
+					Model:    "gpt-4o-mini",
+					SecretRef: agentv1alpha1.Secret{
+						Name: "ai-api-key",
+						Key:  "api-key",
+					},
+				},
+			},
+		},
+	}
+
+	c := fake.NewClientBuilder().WithScheme(testScheme()).WithObjects(secret).Build()
+	builder := NewRuntimeConfigBuilder(c)
+
+	data, err := builder.Build(context.Background(), run, repo)
+	if err != nil {
+		t.Fatalf("Build() error: %v", err)
+	}
+
+	var cfg RuntimeConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+
+	if cfg.Model.APIKey != "sk-test-key-123" {
+		t.Errorf("APIKey = %q, want sk-test-key-123", cfg.Model.APIKey)
+	}
+	if cfg.Model.Provider != "openai" {
+		t.Errorf("Provider = %q, want openai", cfg.Model.Provider)
+	}
+}
+
 func TestBuild_MCPServerWithSecretRef(t *testing.T) {
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
@@ -120,8 +175,8 @@ func TestBuild_MCPServerWithSecretRef(t *testing.T) {
 			Settings: &agentv1alpha1.Settings{
 				MCPServers: []agentv1alpha1.MCPServerSpec{
 					{
-						Name:  "github",
-						Image: "ghcr.io/mcp/github:latest",
+						Name:    "github",
+						Command: []string{"npx", "-y", "@modelcontextprotocol/server-github"},
 						Env: []agentv1alpha1.EnvVar{
 							{
 								Name: "GITHUB_TOKEN",
@@ -156,8 +211,11 @@ func TestBuild_MCPServerWithSecretRef(t *testing.T) {
 		t.Fatalf("expected 1 MCP server, got %d", len(cfg.MCPServers))
 	}
 	srv := cfg.MCPServers[0]
-	if srv.Name != "github" || srv.Image != "ghcr.io/mcp/github:latest" {
-		t.Errorf("MCP server = %+v", srv)
+	if srv.Name != "github" {
+		t.Errorf("MCP server name = %q, want github", srv.Name)
+	}
+	if len(srv.Command) != 3 || srv.Command[0] != "npx" {
+		t.Errorf("MCP server command = %v", srv.Command)
 	}
 	if len(srv.Env) != 1 || srv.Env[0].Name != "GITHUB_TOKEN" || srv.Env[0].Value != "ghp_test123" {
 		t.Errorf("Env = %+v", srv.Env)
@@ -247,7 +305,7 @@ func TestBuild_MCPServerNotInCatalog(t *testing.T) {
 		Spec: agentv1alpha1.RepositorySpec{
 			Settings: &agentv1alpha1.Settings{
 				MCPServers: []agentv1alpha1.MCPServerSpec{
-					{Name: "github"},
+					{Name: "github", Command: []string{"npx", "-y", "@mcp/server-github"}},
 				},
 			},
 		},

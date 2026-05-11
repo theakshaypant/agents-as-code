@@ -79,21 +79,17 @@ type MCPServerSpec struct {
 	// +kubebuilder:validation:MinLength=1
 	Name string `json:"name"`
 
-	// Image is a container image for the MCP server (sidecar model).
-	// Mutually exclusive with Command.
-	// +optional
-	Image string `json:"image,omitempty"`
+	// Command launches the MCP server as a subprocess (stdio transport).
+	// For npm packages use: ["npx", "-y", "@scope/mcp-server-name"]
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinItems=1
+	Command []string `json:"command"`
 
-	// Command is the command to launch the MCP server (stdio transport).
-	// Mutually exclusive with Image.
-	// +optional
-	Command []string `json:"command,omitempty"`
-
-	// Args passed to the MCP server.
+	// Args are additional arguments appended after Command.
 	// +optional
 	Args []string `json:"args,omitempty"`
 
-	// Env are environment variables for the MCP server.
+	// Env are environment variables for the MCP server process.
 	// +optional
 	Env []EnvVar `json:"env,omitempty"`
 }

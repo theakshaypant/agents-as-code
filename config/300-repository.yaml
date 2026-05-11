@@ -230,19 +230,20 @@ spec:
                       items:
                         properties:
                           args:
-                            description: Args passed to the MCP server.
+                            description: Args are additional arguments appended after Command.
                             items:
                               type: string
                             type: array
                           command:
                             description: |-
-                              Command is the command to launch the MCP server (stdio transport).
-                              Mutually exclusive with Image.
+                              Command launches the MCP server as a subprocess (stdio transport).
+                              For npm packages use: ["npx", "-y", "@scope/mcp-server-name"]
                             items:
                               type: string
+                            minItems: 1
                             type: array
                           env:
-                            description: Env are environment variables for the MCP server.
+                            description: Env are environment variables for the MCP server process.
                             items:
                               properties:
                                 name:
@@ -285,16 +286,12 @@ spec:
                                 - name
                               type: object
                             type: array
-                          image:
-                            description: |-
-                              Image is a container image for the MCP server (sidecar model).
-                              Mutually exclusive with Command.
-                            type: string
                           name:
                             description: Name identifies this MCP server. Agents reference this name.
                             minLength: 1
                             type: string
                         required:
+                          - command
                           - name
                         type: object
                       type: array
