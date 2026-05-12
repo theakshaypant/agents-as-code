@@ -107,6 +107,41 @@ Key design areas:
 
 ---
 
+## Long-Running Agents
+
+**Status:** Not implemented. Every AgentRun currently creates a sandbox, runs a single agent, and destroys the sandbox — no state survives between runs.
+
+Today, agents triggered on the same issue or PR operate in complete isolation. In the [working examples](https://github.com/theakshaypant/yeet-test), the triage agent classifies issue #1, the implementer agent creates PR #6 from that issue, and the reviewer agent reviews the PR — but none of them know what the others did. The implementer doesn't see the triage analysis, and the reviewer doesn't know why the implementer made specific design choices.
+
+A long-running agent would persist for the lifecycle of a GitHub object (issue, PR, or both) and accumulate context across every interaction:
+
+```
+Issue #1 opened
+  └─ /triage → agent analyzes, labels, posts summary
+       context saved: classification, complexity, suggested approach
+  └─ /implement → same agent context knows the triage analysis
+       context saved: implementation rationale, files changed, trade-offs
+  └─ PR #6 created (linked to issue #1)
+       └─ reviewer triggers → same context includes triage + implementation reasoning
+       └─ reviewer posts comments → context updated with review feedback
+       └─ developer pushes fixes → agent re-reviews with full history
+  └─ PR #6 merged → issue #1 closed → agent context archived
+```
+
+Key design areas:
+
+- **Lifecycle binding** — an agent session is bound to a GitHub object (issue, PR, or an issue + its linked PRs). The session stays alive until the object is closed/merged, then the context is archived or destroyed
+- **Shared memory across agent types** — triage, implementer, and reviewer agents on the same issue/PR read and write to a shared context store. Each agent appends its observations, decisions, and rationale so downstream agents can build on prior work rather than starting from scratch
+- **Sandbox strategy** — long-running doesn't necessarily mean a long-running sandbox. The sandbox can still be ephemeral per invocation, while the persistent context lives outside the sandbox (in a PVC, CRD status, or external store like a vector DB). The controller injects accumulated context into each new sandbox via `config.json`
+- **Context as template variables** — new template variables like `{{ agent_history }}`, `{{ prior_analysis }}`, or `{{ implementation_rationale }}` that resolve from the accumulated context, keeping the agent definition format unchanged
+- **Warm sandboxes (optional)** — for latency-sensitive use cases, agent-sandbox's suspend/resume could keep a sandbox warm and idle between interactions instead of recreating it each time. This trades resource cost for faster response
+- **Context budget** — as interactions accumulate, the context grows. A summarization or relevance-filtering strategy is needed to keep the context within token limits while preserving the most useful information
+- **Eviction and cleanup** — stale sessions (inactive issues, abandoned PRs) need TTL-based eviction. Archived context could be queryable for post-mortem or audit
+
+This is where alternatives like [kagent](https://kagent.dev/) become relevant — kagent provides persistent vector-backed memory across agent sessions natively. The choice is between building lifecycle-bound context into AAC's controller or integrating with a framework that already solves agent memory.
+
+---
+
 ## Agent Chaining
 
 **Status:** The mechanism exists naturally — agents post git actions which trigger new events which can trigger other agents. No explicit chaining protocol needed.
