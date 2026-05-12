@@ -154,6 +154,89 @@ This is where alternatives like [kagent](https://kagent.dev/) become relevant �
 
 ---
 
+## Structured Agent Workflows
+
+**Status:** Not implemented. The runtime is purely prompt-driven — a single `agent.run_sync()` call where the LLM decides everything.
+
+Today, the agent runtime (`runtime/agent_run.py`) works in one mode: give the LLM a system prompt, tools, and MCP servers, then let it figure out the rest. This works well for open-ended tasks like code review or triage where the LLM's judgment is the whole point. But some workflows have known steps that should execute in a defined order, with conditional branching, retries, or human checkpoints — and leaving all of that to the LLM's discretion is both unreliable and wasteful.
+
+Consider an implementation workflow that should always follow a specific process:
+
+```yaml
+# .tekton/agents/implement-with-tests.yaml
+apiVersion: agent.tekton.dev/v1alpha1
+kind: Agent
+metadata:
+  name: implement-with-tests
+  annotations:
+    agent.tekton.dev/on-event: "issue_comment"
+    agent.tekton.dev/on-comment: "/implement"
+    agent.tekton.dev/clone-repo: "true"
+    agent.tekton.dev/result-hooks: "true"
+spec:
+  workflow:
+    steps:
+      - name: analyze
+        prompt: |
+          Analyze the issue and the existing codebase. Identify which files
+          need to change and outline your implementation approach.
+          {{ issue_body }}
+        tools: [read_file, list_files, run_command]
+
+      - name: implement
+        prompt: |
+          Implement the changes based on your analysis.
+          {{ steps.analyze.output }}
+        tools: [read_file, write_file, list_files, run_command]
+
+      - name: test
+        prompt: |
+          Write tests for the changes you made. Run the test suite.
+          {{ steps.implement.output }}
+        tools: [read_file, write_file, run_command]
+
+      - name: lint
+        type: command
+        image: golangci/golangci-lint:latest
+        run: "golangci-lint run ./..."
+        on_failure: retry_step(implement, max=2)
+
+      - name: verify
+        type: command
+        run: "cd {{ repo_clone_path }} && make test"
+        on_failure: retry_step(implement, max=2)
+
+      - name: scan
+        type: command
+        image: aquasec/trivy:latest
+        run: "trivy fs --severity HIGH,CRITICAL {{ repo_clone_path }}"
+
+      - name: submit
+        prompt: |
+          Summarize what you implemented and create a PR.
+          Test results: {{ steps.verify.output }}
+          Security scan: {{ steps.scan.output }}
+        tools: [read_file, list_files]
+        condition: "{{ steps.verify.exit_code }} == 0"
+```
+
+This is fundamentally different from the current prompt-only model. Instead of hoping the LLM remembers to run tests after implementing, the workflow guarantees it. Instead of the LLM deciding whether to retry after a test failure, the workflow defines the retry policy.
+
+Key design areas:
+
+- **Step types** — two kinds of steps:
+  - `prompt` (default) — runs an LLM agent with the given prompt and tools, same as today's runtime but scoped to a single step. Each step can restrict which tools are available, so the analysis step can't write files and the implementation step can't submit results
+  - `command` — runs a shell command directly without an LLM, for deterministic operations like running a test suite, linting, or building. The exit code and output are captured for downstream steps
+- **Custom step images** — command steps can specify an `image` field to run in a user-provided container instead of the default agent runtime image. This is directly analogous to how Tekton Tasks let you pick a container image per step. A lint step can run in `golangci/golangci-lint`, a security scan in `aquasec/trivy`, a build step in a project-specific image with the right toolchain pre-installed — without bloating the base agent runtime image. The sandbox mounts the workspace volume into the custom container so it has access to the same files. Prompt steps always run in the agent runtime image since they need the PydanticAI runtime and LLM client
+- **Step context passing** — each step's output is available to subsequent steps via `{{ steps.<name>.output }}`. The runtime manages the context window: earlier steps can be summarized to stay within token limits while the most recent step's output is passed in full
+- **Conditional execution** — steps can have a `condition` field evaluated against prior step outputs or exit codes. A PR creation step can be gated on tests passing. A security scan step can be skipped if the diff only touches documentation
+- **Failure handling** — per-step failure policies: `retry_step` (re-run a specific step with the error context), `fail` (abort the workflow), `continue` (proceed anyway), or `goto` (jump to a recovery step). This is where structured workflows shine over prompt-only — the retry loop is explicit, not dependent on the LLM spontaneously deciding to try again
+- **Human-in-the-loop checkpoints** — a step can pause the workflow and post a comment asking for human approval before continuing. The workflow resumes when the human responds (via a comment command or reaction). Useful for gating destructive actions like committing to a protected branch or creating a PR with large changes
+- **Framework integration** — the runtime contract (`config.json` in, `result.json` out) is framework-agnostic. The `workflow` field could map to [LangGraph](https://langchain-ai.github.io/langgraph/) graphs, [CrewAI](https://www.crewai.com/) crews, or [Google ADK](https://google.github.io/adk-docs/) pipelines under the hood. The agent definition stays declarative YAML; the runtime translates it to the framework's execution model. This also opens the door to agents defined as Python/TypeScript code instead of YAML for teams that need full programmatic control
+- **Hybrid mode** — not every agent needs a workflow. Simple agents (triage, review) stay prompt-only — adding steps would just be ceremony. The `workflow` field is optional; if absent, the runtime behaves exactly as it does today. The two modes coexist in the same `.tekton/agents/` directory
+
+---
+
 ## Agent Chaining
 
 **Status:** The mechanism exists naturally — agents post git actions which trigger new events which can trigger other agents. No explicit chaining protocol needed.
