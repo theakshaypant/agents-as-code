@@ -76,7 +76,9 @@ Key areas:
 
 **Status:** Not implemented. Each AgentRun currently executes a single agent.
 
-An AgentRun could orchestrate multiple agents in sequence — similar to how a Tekton Pipeline composes Tasks. A single event could trigger a coordinated workflow:
+Today, a git event can only trigger one agent at a time. If a PR needs code review, security scanning, and a summary, that's three separate AgentRuns — each triggered independently, each running in its own sandbox, each posting results without awareness of what the others found. The security scanner might flag a vulnerability that the reviewer also noticed, leading to duplicate comments. The summarizer has no idea what the reviewer or scanner said, so it can only summarize the diff — not the review.
+
+An `AgentPipeline` would orchestrate multiple agents on a single event — similar to how a Tekton Pipeline composes Tasks:
 
 ```yaml
 # .tekton/agents/pr-workflow.yaml
@@ -96,14 +98,24 @@ spec:
     - name: summarize
       agent_ref: pr-summarizer
       run_after: [review, security]
+      context_from: [review, security]
 ```
+
+In this example, `review` and `security` run in parallel. Once both complete, `summarize` runs with their results injected as context — it can synthesize a summary that covers both the code quality feedback and the security findings in a single, coherent comment instead of three independent ones.
 
 Key design areas:
 
-- **Sequential and parallel execution** — agents can run in parallel by default, with `run_after` for ordering dependencies
-- **Result passing** — earlier agents' results (comments, reviews, labels) available as context to later agents via template variables
-- **Failure policy** — continue on failure, fail-fast, or conditional execution based on prior agent outcomes
-- **Shared sandbox vs isolated** — whether agents in the same run share a sandbox (cheaper, can share filesystem state) or get separate sandboxes (stronger isolation)
+- **Sequential and parallel execution** — agents run in parallel by default, with `run_after` for ordering dependencies. This mirrors Tekton Pipeline's DAG model where tasks without dependencies start immediately and dependent tasks wait for their inputs
+- **Inter-agent context passing** — a `context_from` field on each agent specifies which prior agents' results should be injected into its prompt. The controller resolves these as template variables (`{{ review.result }}`, `{{ security.result }}`) so downstream agents can reference specific findings, not just raw diffs. This is the key difference from running agents independently — agents can build on each other's analysis
+- **Shared sandbox vs isolated sandboxes** — two execution models:
+  - **Isolated** (default) — each agent gets its own sandbox. Stronger isolation, but agents can only share structured results via the controller. Best when agents don't need filesystem state from each other
+  - **Shared** — agents in the same pipeline share a single sandbox. A coding agent can write files that a test agent then runs, or a security scanner can inspect the exact filesystem state left by a prior agent. Cheaper (one sandbox instead of N) but weaker isolation — a misbehaving agent can corrupt the shared environment
+- **Failure policy** — three modes:
+  - `fail-fast` — abort the pipeline on the first agent failure
+  - `continue` — run all agents regardless of failures, collect partial results
+  - `conditional` — skip downstream agents based on prior outcomes (e.g., don't summarize if both review and security failed)
+- **Result aggregation** — the controller collects results from all agents in the pipeline and can deduplicate or merge them before executing git actions. If both the reviewer and scanner flag the same line, post one comment instead of two. If multiple agents want to add labels, merge the label sets
+- **Unified result hooks** — a pipeline-level `result-hooks` that executes after all agents complete, with access to the aggregated results. This allows a single summary comment that synthesizes all agent outputs, rather than N independent comments flooding the PR
 
 ---
 
